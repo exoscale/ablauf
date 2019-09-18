@@ -1,0 +1,15 @@
+digraph {
+   dopar -> a
+   dopar -> do
+   dopar -> try
+
+   do -> b
+   do -> c
+   try -> nodes
+   try -> rescue
+   try -> finally
+
+   nodes -> d
+   rescue -> e
+   finally -> f
+}
