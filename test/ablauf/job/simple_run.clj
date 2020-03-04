@@ -4,7 +4,7 @@
             [ablauf.job          :as job]
             [ablauf.job.ast      :as ast]
             [ablauf.job.store    :as store]
-            [ablauf.job.manifold :refer [runner dispatch-action]]
+            [ablauf.job.manifold :refer [runner]]
             [clojure.test        :refer :all]))
 
 (defn stream-store
@@ -17,10 +17,15 @@
 
 (defn run-ast
   [ast]
-  (let [s (stream/stream 10)]
+  (let [s         (stream/stream 10)
+        action-fn (fn [{:ast/keys [action payload]}]
+                    (case action
+                      :action/fail (d/error-deferred :error/error)
+                      :action/log  (d/success-deferred payload)))]
     (runner (stream-store s)
             ast
-            {:runtime {:runtime/clock (constantly 0)}})
+            {:runtime {:runtime/clock (constantly 0)}
+             :action-fn action-fn})
     (vec (stream/stream->seq s))))
 
 (def log-output
@@ -205,29 +210,28 @@
 
 (deftest runtime-test
 
-  (let [runtime {:foo 123}
-        p       (promise)]
-
-    (defmethod dispatch-action :runtime/test
-      [{{:exec/keys [runtime]} :exec/context :as payload}]
-      (deliver p runtime)
-      (d/future
-        {:exec :success}))
+  (let [runtime   {:foo 123}
+        p         (promise)
+        action-fn (fn [{{:exec/keys [runtime]} :exec/context :as payload}]
+                    (deliver p runtime)
+                    (d/future {:exec :success}))]
 
     (runner (stream-store (stream/stream 5))
             (ast/action!! :runtime/test {})
-            {:runtime runtime})
+            {:runtime   runtime
+             :action-fn action-fn})
 
     (is (= runtime @p))))
 
 (deftest expected-failure-test
 
-  (let [counter (atom 0)]
-
-    (defmethod dispatch-action ::inc
-      [_]
-      (swap! counter inc)
-      (d/future {:exec :success}))
+  (let [counter   (atom 0)
+        action-fn (fn [{:ast/keys [action payload]}]
+                    (case action
+                      :action/fail (d/error-deferred :error/error)
+                      :action/log  (d/success-deferred payload)
+                      ::inc        (do (swap! counter inc)
+                                       (d/success-deferred {:exec :success}))))]
 
     (let [res
           (runner (stream-store
@@ -236,7 +240,8 @@
                    (ast/fail!!)
                    (ast/action!! ::inc {})
                    (ast/action!! ::inc {})
-                   (ast/action!! ::inc {})))]
+                   (ast/action!! ::inc {}))
+                  {:action-fn action-fn})]
 
       (is (zero? @counter))
       (reset! counter 0))
@@ -248,7 +253,8 @@
                    (ast/fail!!)
                    (ast/action!! ::inc {})
                    (ast/action!! ::inc {})
-                   (ast/action!! ::inc {})))]
+                   (ast/action!! ::inc {}))
+                  {:action-fn action-fn})]
 
       (is (= @counter 3))
       (reset! counter 0))
