@@ -22,6 +22,30 @@
             [manifold.stream      :as s]
             [spootnik.transducers :refer [reductions-with]]))
 
+(defmulti dispatch-action
+  "
+  Dumb action handler, should live in its own namespace
+  and be provided to the runner instead.
+
+  Methods should be installed by callers of `runner` since
+  this namespace does not know what side effects may be performed.
+
+  All methods are expected to yield manifold deferred.
+  "
+  :ast/action)
+
+(defmethod dispatch-action :action/log
+  [{:ast/keys [payload]}]
+  (d/future payload))
+
+(defmethod dispatch-action :action/fail
+  [_]
+  (d/error-deferred :error/error))
+
+(defmethod dispatch-action :default
+  [_]
+  (d/error-deferred :error/error))
+
 (defn- timestamp
   "Standard wall clock implementation"
   []
@@ -47,30 +71,10 @@
                               :exec/duration duration)
                        (dissoc :exec/context))])))
 
-(defmulti dispatch-action
-  "
-  Dumb action handler, should live in its own namespace
-  and be provided to the runner instead.
-
-  Methods should be installed by callers of `runner` since
-  this namespace does not know what side effects may be performed.
-
-  All methods are expected to yield manifold deferred.
-  "
-  :ast/action)
-
-(defmethod dispatch-action :action/log
-  [{:ast/keys [payload]}]
-  (d/future payload))
-
-(defmethod dispatch-action :action/fail
-  [_]
-  (d/error-deferred :error/error))
-
 (defn redispatcher
   "Once dispatchs have been determined by `job/restart`, dispatch
    actions with callbacks into the restarter."
-  [input store id result]
+  [dispatcher input store id result]
   (fn [[job context dispatchs]]
     (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)]
       ;; Persist to given store
@@ -81,7 +85,7 @@
               :let [dispatch (assoc d
                                     :exec/context context
                                     :exec/timestamp (clock))]]
-        (d/on-realized (dispatch-action dispatch)
+        (d/on-realized (dispatcher dispatch)
                        (partial success! input clock dispatch)
                        (partial fail! input clock dispatch))))
 
@@ -101,16 +105,16 @@
 (defn runner
   "Create a stream which listens for input results and figures
    out next dispatchs to send"
-  ([store ast]
-   (runner store ast {:id (java.util.UUID/randomUUID)}))
-  ([store ast {:keys [id context buffer runtime] :or {buffer 10}}]
-   (let [context (assoc context :exec/runtime runtime)
-         job     (job/make-with-context ast context)
-         input   (s/stream buffer (restart-transducer job))
-         result  (d/deferred)]
-     (s/consume (redispatcher input store id result) input)
+  [store ast {:keys [action-fn id context buffer runtime] :or {buffer 10}}]
+  (let [context    (assoc context :exec/runtime runtime)
+        job        (job/make-with-context ast context)
+        input      (s/stream buffer (restart-transducer job))
+        id         (or id (java.util.UUID/randomUUID))
+        result     (d/deferred)
+        dispatcher (or action-fn dispatch-action)]
+    (s/consume (redispatcher dispatcher input store id result) input)
 
-     ;; Put an initial empty result payload in the stream
-     ;; to guarantee initial dispatchs are sent
-     (s/put! input [])
-     result)))
+    ;; Put an initial empty result payload in the stream
+    ;; to guarantee initial dispatchs are sent
+    (s/put! input [])
+    result))
