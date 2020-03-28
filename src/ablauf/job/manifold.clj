@@ -76,16 +76,19 @@
    actions with callbacks into the restarter."
   [dispatcher input store id result]
   (fn [[job context dispatchs]]
-    (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)]
-      ;; Persist to given store
-      (store/persist store id (dissoc context :exec/runtime) job)
+    (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)
+          ;; Persist to given store, either we get a deferred or nil, doesn't matter
+          persist-result (d/->deferred (store/persist store id (dissoc context :exec/runtime) job) nil)]
 
       ;; Launch all dispatchs found
       (doseq [d    dispatchs
               :let [dispatch (assoc d
                                     :exec/context context
                                     :exec/timestamp (clock))]]
-        (d/on-realized (dispatcher dispatch)
+        ;; all dispatchers chain on the same persist-result deferred
+        ;; to ensure progress only when persist-result is not a failure
+        (d/on-realized (d/chain persist-result
+                                (fn [_] (dispatcher dispatch)))
                        (partial success! input clock dispatch)
                        (partial fail! input clock dispatch))))
 
