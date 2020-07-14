@@ -110,6 +110,40 @@ With the proposed approach, given unique IDs for executions, storing
 the full execution tree after each restart provides full introspection
 into the state of each job.
 
+### Terminology
+
+#### AST
+AST or abstract syntax tree, is the representation of the ablauf program. It can consist of the following nodes:
+
+* `::ast/leaf`: A node without children. Represents an action the program should take.
+* `::ast/seq`: Represents a list of actions that will be executed sequentially.
+* `::ast/par`: Represents a list of actions that will be executed in parallel.
+* `::ast/try`: A node that contains at most 3 children:
+    * Forms: An `::ast/seq` containing the actions to be tried
+    * Rescue: An `::ast/seq` containing the actions to be executed if the ast in form returns an error
+    * Finally: An `::ast/seq` containing actions that will be executed after either forms or rescue completes.
+    
+#### Dispatcher
+An `::ast/leaf`, which represents an action performed by the program, is defined by the following spec
+
+``` clojure
+(defmethod spec-by-ast-type :ast/leaf
+  [_]
+  (s/keys :req [:ast/action :ast/payload]))
+  
+  
+(s/def :ast/action    keyword?)
+(s/def :ast/payload   any?)
+```
+
+The `::ast/action` is a keyword that represents the action to be performed. A dispatcher matches this keyword to the actual implementation.
+By default, the manifold runner uses the `dispatch-action` multimethod to route the action to a function that knows how to handle it, based on the `::ast/action` key. It is possible to supply your own dispatcher implementation using the `:action-fn` key in `manifold/runner`.
+
+#### Runner
+The runner is the execution engine that'll schedule and coordinate the actions in the ablauf ast. Since ablauf is based on a continuation passing mechanism, the runner is closely tied to the messaging mechanism. Anything that provides a queue-like abstraction should be usable as the basis for a runner implementation.
+
+At the time of writing the only runner implementation is based around the stream abstraction from the manifold library, which provides an in process queue without durability. This README also contains some pointers for how a runner based on apache Kafka could be made, should more durability be required.
+
 ### Future work
 
 #### Conditionals in flow control
