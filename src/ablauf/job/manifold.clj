@@ -17,7 +17,6 @@
   "
   (:require [ablauf.job           :as job]
             [ablauf.job.store     :as store]
-            [ablauf.job.ast       :as ast]
             [manifold.deferred    :as d]
             [manifold.stream      :as s]
             [spootnik.transducers :refer [reductions-with]]))
@@ -73,12 +72,19 @@
 
 (defn redispatcher
   "Once dispatchs have been determined by `job/restart`, dispatch
-   actions with callbacks into the restarter."
-  [dispatcher input store id result]
+   actions with callbacks into the restarter.
+   `persist-deferred` is a user-supplied deferred that will be resolved/error'd to signal persist is done"
+  [dispatcher input store id result persist-deferred]
   (fn [[job context dispatchs]]
-    (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)
+    (let [clock          (or (get-in context [:exec/runtime :runtime/clock]) timestamp)
           ;; Persist to given store, either we get a deferred or nil, doesn't matter
           persist-result (d/->deferred (store/persist store id (dissoc context :exec/runtime) job) nil)]
+
+      ;; callback with persist result
+      (when persist-deferred
+        (-> (d/chain persist-result
+                     #(d/success! persist-deferred %))
+            (d/catch #(d/error! persist-deferred %))))
 
       ;; Launch all dispatchs found
       (doseq [d    dispatchs
@@ -108,14 +114,14 @@
 (defn runner
   "Create a stream which listens for input results and figures
    out next dispatchs to send"
-  [store ast {:keys [action-fn id context buffer runtime] :or {buffer 10}}]
+  [store ast {:keys [action-fn id context buffer runtime persist-deferred] :or {buffer 10}}]
   (let [context    (assoc context :exec/runtime runtime)
         job        (job/make-with-context ast context)
         input      (s/stream buffer (restart-transducer job))
         id         (or id (java.util.UUID/randomUUID))
         result     (d/deferred)
         dispatcher (or action-fn dispatch-action)]
-    (s/consume (redispatcher dispatcher input store id result) input)
+    (s/consume (redispatcher dispatcher input store id result persist-deferred) input)
 
     ;; Put an initial empty result payload in the stream
     ;; to guarantee initial dispatchs are sent
