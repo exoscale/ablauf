@@ -61,3 +61,14 @@
           {:a :a} ;; context updated
           nil ;; no new dispatchs, we're done
           ])))
+
+(deftest status-test
+  (is (= :job/pending
+         (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
+                                                    :exec/result :result/pending}]}])))
+  (is (= :job/failure
+         (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
+                                                    :exec/result :result/failure}]}])))
+  (is (= :job/success
+         (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
+                                                    :exec/result :result/success}]}]))))
