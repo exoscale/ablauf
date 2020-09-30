@@ -17,7 +17,6 @@
   "
   (:require [ablauf.job           :as job]
             [ablauf.job.store     :as store]
-            [ablauf.job.ast       :as ast]
             [manifold.deferred    :as d]
             [manifold.stream      :as s]
             [spootnik.transducers :refer [reductions-with]]))
@@ -73,19 +72,25 @@
 
 (defn redispatcher
   "Once dispatchs have been determined by `job/restart`, dispatch
-   actions with callbacks into the restarter."
+   actions with callbacks into the restarter.
+
+   It is important that there is no opportunity for the yielded closure
+   to throw."
   [dispatcher input store id result]
   (fn [[job context dispatchs]]
-    (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)
-          ;; Persist to given store, either we get a deferred or nil, doesn't matter
-          persist-result (d/->deferred (store/persist store id (dissoc context :exec/runtime) job) nil)]
+    (let [clock          (or (get-in context [:exec/runtime :runtime/clock])
+                             timestamp)
+          clean-context  (dissoc context :exec/runtime)
+          ;; Persist to given store. Ensure persist happens in a future.
+          persist-result (d/future
+                           (store/persist store id clean-context job))]
 
       ;; Launch all dispatchs found
       (doseq [d    dispatchs
               :let [dispatch (assoc d
                                     :exec/context context
                                     :exec/timestamp (clock))]]
-        ;; all dispatchers chain on the same persist-result deferred
+        ;; All dispatchers chain on the same persist-result deferred
         ;; to ensure progress only when persist-result is not a failure
         (d/on-realized (d/chain persist-result
                                 (fn [_] (dispatcher dispatch)))

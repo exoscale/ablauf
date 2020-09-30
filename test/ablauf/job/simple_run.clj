@@ -15,6 +15,10 @@
       (when (job/done? state)
         (stream/close! s)))))
 
+(def empty-store
+  (reify store/JobStore
+    (persist [this uuid context state])))
+
 (defn run-ast
   [ast]
   (let [s         (stream/stream 10)
@@ -212,11 +216,11 @@
 
   (let [runtime   {:foo 123}
         p         (promise)
-        action-fn (fn [{{:exec/keys [runtime]} :exec/context :as payload}]
+        action-fn (fn [{{:exec/keys [runtime]} :exec/context}]
                     (deliver p runtime)
                     (d/future {:exec :success}))]
 
-    (runner (stream-store (stream/stream 5))
+    (runner empty-store
             (ast/action!! :runtime/test {})
             {:runtime   runtime
              :action-fn action-fn})
@@ -233,29 +237,29 @@
                       ::inc        (do (swap! counter inc)
                                        (d/success-deferred {:exec :success}))))]
 
-    (let [res
-          (runner (stream-store
-                   (stream/stream 10))
-                  (ast/do!!
-                   (ast/fail!!)
-                   (ast/action!! ::inc {})
-                   (ast/action!! ::inc {})
-                   (ast/action!! ::inc {}))
-                  {:action-fn action-fn})]
+    (runner empty-store
+            (ast/do!!
+             (ast/fail!!)
+             (ast/action!! ::inc {})
+             (ast/action!! ::inc {})
+             (ast/action!! ::inc {}))
+            {:action-fn action-fn})
 
-      (is (zero? @counter))
-      (reset! counter 0))
+    (is (zero? @counter))
+    (reset! counter 0)
 
-    (let [res
-          (runner (stream-store
-                   (stream/stream 10))
-                  (ast/dopar!!
-                   (ast/fail!!)
-                   (ast/action!! ::inc {})
-                   (ast/action!! ::inc {})
-                   (ast/action!! ::inc {}))
-                  {:action-fn action-fn})]
+    (let [[job]
+          @(d/catch
+              (runner empty-store
+                      (ast/dopar!!
+                       (ast/fail!!)
+                       (ast/action!! ::inc {})
+                       (ast/action!! ::inc {})
+                       (ast/action!! ::inc {}))
+                      {:action-fn action-fn})
+              identity)]
 
+      (is (job/failed? job))
       (is (= @counter 3))
       (reset! counter 0))
 
