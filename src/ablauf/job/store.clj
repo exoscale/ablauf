@@ -1,4 +1,5 @@
-(ns ablauf.job.store)
+(ns ablauf.job.store
+  (:require [manifold.deferred :as d]))
 
 (defprotocol JobStore
   (persist [this uuid context state]))
@@ -8,3 +9,16 @@
   (reify JobStore
     (persist [this uuid context state]
       (swap! db assoc uuid {:state state :context context}))))
+
+(defn safe-persist
+  "Ensure that persist does not throw and returns output that
+   ablauf.job.manifold can safely process"
+  [store uuid context state]
+  (try
+    (d/->deferred
+     (persist store uuid context state)
+     nil)
+    (catch AssertionError ae
+      (d/error-deferred (ex-info "assertion-error" {} ae)))
+    (catch Exception e
+      (d/error-deferred e))))

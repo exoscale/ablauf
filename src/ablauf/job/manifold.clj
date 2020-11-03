@@ -17,7 +17,6 @@
   "
   (:require [ablauf.job           :as job]
             [ablauf.job.store     :as store]
-            [ablauf.job.ast       :as ast]
             [manifold.deferred    :as d]
             [manifold.stream      :as s]
             [spootnik.transducers :refer [reductions-with]]))
@@ -77,8 +76,11 @@
   [dispatcher input store id result]
   (fn [[job context dispatchs]]
     (let [clock (or (get-in context [:exec/runtime :runtime/clock]) timestamp)
-          ;; Persist to given store, either we get a deferred or nil, doesn't matter
-          persist-result (d/->deferred (store/persist store id (dissoc context :exec/runtime) job) nil)]
+          ;; Persist to given store, either we get a deferred or nil,
+          ;; doesn't matter
+          persist-result (store/safe-persist store id
+                                             (dissoc context :exec/runtime)
+                                             job)]
 
       ;; Launch all dispatchs found
       (doseq [d    dispatchs

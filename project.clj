@@ -13,5 +13,6 @@
   :deploy-repositories [["snapshots" :clojars]
                         ["releases"  :clojars]]
   :aliases {"kaocha" ["with-profile" "+dev" "run" "-m" "kaocha.runner"]}
-  :profiles {:dev {:dependencies [[lambdaisland/kaocha "0.0-529"]]}}
+  :profiles {:dev {:dependencies [[lambdaisland/kaocha "0.0-529"]]
+                   :pedantic? :ignore}}
   :pedantic? :abort)
