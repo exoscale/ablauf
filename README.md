@@ -160,21 +160,23 @@ add, expanding nodes based on information provided in steps.
 
 ```clojure
 (require '[ablauf.job.ast      :as ast]
-         '[ablauf.job.manifold :as job]
-		 '[ablauf.job.store    :ast store])
-		 
+         '[ablauf.job          :as job]
+         '[ablauf.job.store    :as store]
+         '[ablauf.job.manifold :refer [runner]])
+
+
 (def ast
   (ast/dopar!!
     (ast/log!! "a")
     (ast/try!!
-      (ast/fail!! "error")
+      (ast/fail!!)
       (ast/log!! "should-not-run")
       (rescue!!  (ast/log!! "rescue"))
       (finally!! (ast/log!! "finally")))))
   
 (let [db            (atom {})
       store         (store/mem-job-store db)
-      [job context] @(job/runner store ast)]
+      [job context] @(runner store ast {})]
   ...
   (job/failed? job) ;;=> false
   (job/done? job)   ;;=> true
