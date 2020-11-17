@@ -109,14 +109,20 @@
 
 (defn runner
   "Create a stream which listens for input results and figures
-   out next dispatchs to send"
+   out next dispatchs to send."
   [store ast {:keys [action-fn id context buffer runtime] :or {buffer 10}}]
-  (let [context    (assoc context :exec/runtime runtime)
-        job        (job/make-with-context ast context)
-        input      (s/stream buffer (restart-transducer job))
-        id         (or id (java.util.UUID/randomUUID))
-        result     (d/deferred)
-        dispatcher (or action-fn dispatch-action)]
+  (let [runtime-context (assoc context :exec/runtime runtime)
+        [job :as acc]   (job/make-with-context ast runtime-context)
+        input           (s/stream buffer (restart-transducer acc))
+        id              (or id (java.util.UUID/randomUUID))
+        result          (d/deferred)
+        dispatcher      (or action-fn dispatch-action)]
+    ;; Force a first synchronous persist call, this will throw if
+    ;; the persist fails and the job will not get executed.
+    ;;
+    ;; Avoid altogether for nil output from persist
+    (some-> (store/safe-persist store id context job)
+            (deref))
     (s/consume (redispatcher dispatcher input store id result) input)
 
     ;; Put an initial empty result payload in the stream
