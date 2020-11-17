@@ -48,7 +48,7 @@
    a function of the output, a keyword or vector, of keyword
    pointing to a path in the output. Augments also have a destination
    a key or key vector of the position in which to augment the context."
-  [context {:ast/keys [augment] :exec/keys [result output] :as node}]
+  [context {:ast/keys [augment] :exec/keys [result output]}]
   (let [{:augment/keys [source dest]} augment
         dest-vec                      (if (sequential? dest) dest [dest])]
     (cond-> context

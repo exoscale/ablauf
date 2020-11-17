@@ -70,7 +70,7 @@
              dispatchs)))
 
 
-    ;; Le's play with failures and observe behavior
+    ;; Let's play with failures and observe behavior
     (let [base-ast
           (try!! (log!! :a) (log!! :b)
                (rescue!! (log!! :r))

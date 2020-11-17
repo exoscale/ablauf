@@ -103,10 +103,7 @@
 
 (defmethod eligible? :ast/seq
   [node]
-  (and
-    (not (some failed? (:ast/nodes node)))
-    (not (some pending? (:ast/nodes node)))
-    (some eligible? (:ast/nodes node))))
+  (some eligible? (remove done-or-pending? (:ast/nodes node))))
 
 (defmethod eligible? :ast/try
   [node]
@@ -152,6 +149,10 @@
       (and (failed? tnodes)
            (eligible? rnodes))
       (find-dispatchs rnodes)
+
+      (and (failed? tnodes)
+           (done-or-failed? rnodes))
+      (find-dispatchs fnodes)
 
       (and (not (eligible? tnodes))
            (eligible? fnodes))
