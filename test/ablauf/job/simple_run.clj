@@ -29,7 +29,8 @@
     (vec (stream/stream->seq s))))
 
 (def log-output
-  [[[{:ast/type :ast/leaf,
+  [[[#:ast{:action :action/log, :id 0, :payload :a, :type :ast/leaf} nil] nil]
+   [[{:ast/type :ast/leaf,
        :ast/action :action/log,
        :ast/payload :a,
        :ast/id 0,
@@ -48,7 +49,8 @@
     {}]])
 
 (def fail-output
-  [[[{:ast/type :ast/leaf,
+  [[[#:ast{:action :action/fail, :id 0, :type :ast/leaf} nil] nil]
+   [[{:ast/type :ast/leaf,
        :ast/action :action/fail,
        :ast/id 0,
        :exec/result :result/pending}
@@ -67,7 +69,21 @@
 
 (def simple-do-output
 
-    [[[#:ast{:type :ast/seq,
+  [[[#:ast{:id 0,
+            :nodes
+  [#:ast{:action :action/log,
+                  :id 1,
+                  :payload :a,
+                  :type :ast/leaf}
+            #:ast{:action :action/log,
+
+                  :id 2,
+                  :payload :b,
+                  :type :ast/leaf}],
+           :type :ast/seq}
+     nil]
+    nil]
+   [[#:ast{:type :ast/seq,
          :nodes
          [{:ast/type :ast/leaf,
            :ast/action :action/log,

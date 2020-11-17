@@ -59,7 +59,7 @@
 (defn do!!
   "Yields a branch of sequential actions"
   [& nodes]
-  {:ast/type :ast/seq :ast/nodes (vec (remove nil? (flatten nodes)))})
+  {:ast/type :ast/seq :ast/nodes (vec (remove nil? nodes))})
 
 (defn dopar!!
   "Yields a branch of parallel actions"
