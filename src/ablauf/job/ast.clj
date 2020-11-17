@@ -90,9 +90,6 @@
   [& forms]
   (let [[forms finally] (try-extract 'finally!! forms)
         [forms rescue]  (try-extract 'rescue!! forms)]
-    ;; The forms received here is a list of forms (not executed yet) which makes
-    ;; using `do!!`, which flatten the nodes it gets, impossible because the forms
-    ;; would be flattened. ~dajac
     {:ast/type  :ast/try
      :ast/nodes [{:ast/type  :ast/seq
                   :ast/nodes (vec forms)}
