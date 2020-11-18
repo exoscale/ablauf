@@ -171,12 +171,18 @@
   [job]
   (node/pending? (zip/node job)))
 
+(defn eligible?
+  "Predicate to test for pending completion of a (sub)job"
+  [job]
+  (node/eligible? (zip/node job)))
+
 (defn status
   "Get the job status from an ast"
   [ast]
   (cond
-    (pending? ast) :job/pending
-    (failed? ast) :job/failure
-    (done? ast) :job/success
-    :else (throw (ex-info "Wrong AST job state"
-                          {}))))
+    (pending? ast)  :job/pending
+    (failed? ast)   :job/failure
+    (done? ast)     :job/success
+    (eligible? ast) :job/pending
+    :else           (throw (ex-info "Wrong AST job state"
+                                    {}))))
