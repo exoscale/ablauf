@@ -1,6 +1,9 @@
 ablauf: long-running workflow management
 ========================================
 
+[![cljdoc badge](https://cljdoc.xyz/badge/exoscale/ablauf)](https://cljdoc.org/d/exoscale/ablauf/CURRENT/api/exoscale.ablauf)
+[![Clojars Project](https://img.shields.io/clojars/v/exoscale/ablauf.svg)](https://clojars.org/exoscale/ablauf)
+
 ### Wishlist for asynchronous jobs
 
 #### An example language
@@ -122,7 +125,7 @@ AST or abstract syntax tree, is the representation of the ablauf program. It can
     * Forms: An `::ast/seq` containing the actions to be tried
     * Rescue: An `::ast/seq` containing the actions to be executed if the ast in form returns an error
     * Finally: An `::ast/seq` containing actions that will be executed after either forms or rescue completes.
-    
+
 #### Dispatcher
 An `::ast/leaf`, which represents an action performed by the program, is defined by the following spec
 
@@ -130,8 +133,8 @@ An `::ast/leaf`, which represents an action performed by the program, is defined
 (defmethod spec-by-ast-type :ast/leaf
   [_]
   (s/keys :req [:ast/action :ast/payload]))
-  
-  
+
+
 (s/def :ast/action    keyword?)
 (s/def :ast/payload   any?)
 ```
@@ -173,7 +176,7 @@ add, expanding nodes based on information provided in steps.
       (ast/log!! "should-not-run")
       (rescue!!  (ast/log!! "rescue"))
       (finally!! (ast/log!! "finally")))))
-  
+
 (let [db            (atom {})
       store         (store/mem-job-store db)
       [job context] @(runner store ast {})]
@@ -193,5 +196,3 @@ This solution has a few obvious problems:
 Storing the full AST tree, including results, for each step will limit
 the size of jobs that can be created. It does not seem however that
 we will have deep jobs.
-
-

@@ -31,17 +31,17 @@
 (def log-output
   [[[#:ast{:action :action/log, :id 0, :payload :a, :type :ast/leaf} nil] nil]
    [[{:ast/type :ast/leaf,
-       :ast/action :action/log,
-       :ast/payload :a,
-       :ast/id 0,
+      :ast/action :action/log,
+      :ast/payload :a,
+      :ast/id 0,
       :exec/result :result/pending}
      nil]
     {}]
    [[{:ast/type :ast/leaf,
-       :ast/action :action/log,
-       :ast/payload :a,
-       :ast/id 0,
-       :exec/result :result/success,
+      :ast/action :action/log,
+      :ast/payload :a,
+      :ast/id 0,
+      :exec/result :result/success,
       :exec/output :a
       :exec/timestamp 0
       :exec/duration 0}
@@ -51,27 +51,26 @@
 (def fail-output
   [[[#:ast{:action :action/fail, :id 0, :type :ast/leaf} nil] nil]
    [[{:ast/type :ast/leaf,
-       :ast/action :action/fail,
-       :ast/id 0,
-       :exec/result :result/pending}
+      :ast/action :action/fail,
+      :ast/id 0,
+      :exec/result :result/pending}
      nil]
     {}]
    [[{:ast/type :ast/leaf,
-       :ast/action :action/fail,
-       :ast/id 0,
-       :exec/result :result/failure,
+      :ast/action :action/fail,
+      :ast/id 0,
+      :exec/result :result/failure,
       :exec/output :error/error
       :exec/timestamp 0
-      :exec/duration 0      }
+      :exec/duration 0}
      nil]
     {}]])
-
 
 (def simple-do-output
 
   [[[#:ast{:id 0,
-            :nodes
-  [#:ast{:action :action/log,
+           :nodes
+           [#:ast{:action :action/log,
                   :id 1,
                   :payload :a,
                   :type :ast/leaf}
@@ -84,58 +83,58 @@
      nil]
     nil]
    [[#:ast{:type :ast/seq,
-         :nodes
-         [{:ast/type :ast/leaf,
-           :ast/action :action/log,
-           :ast/payload :a,
-           :ast/id 1,
-           :exec/result :result/pending}
-          #:ast{:type :ast/leaf,
-                :action :action/log,
-                :payload :b,
-                :id 2}],
-         :id 0}
-   nil]
-  {}]
- [[#:ast{:type :ast/seq,
-         :nodes
-         [{:ast/type :ast/leaf,
-           :ast/action :action/log,
-           :ast/payload :a,
-           :ast/id 1,
-           :exec/result :result/success,
-           :exec/timestamp 0,
-           :exec/duration 0,
-           :exec/output :a}
-          {:ast/type :ast/leaf,
-           :ast/action :action/log,
-           :ast/payload :b,
-           :ast/id 2,
-           :exec/result :result/pending}],
-         :id 0}
-   nil]
-  {}]
- [[#:ast{:type :ast/seq,
-         :nodes
-         [{:ast/type :ast/leaf,
-           :ast/action :action/log,
-           :ast/payload :a,
-           :ast/id 1,
-           :exec/result :result/success,
-           :exec/timestamp 0,
-           :exec/duration 0,
-           :exec/output :a}
-          {:ast/type :ast/leaf,
-           :ast/action :action/log,
-           :ast/payload :b,
-           :ast/id 2,
-           :exec/result :result/success,
-           :exec/timestamp 0,
-           :exec/duration 0,
-           :exec/output :b}],
-         :id 0}
-   nil]
-  {}]])
+           :nodes
+           [{:ast/type :ast/leaf,
+             :ast/action :action/log,
+             :ast/payload :a,
+             :ast/id 1,
+             :exec/result :result/pending}
+            #:ast{:type :ast/leaf,
+                  :action :action/log,
+                  :payload :b,
+                  :id 2}],
+           :id 0}
+     nil]
+    {}]
+   [[#:ast{:type :ast/seq,
+           :nodes
+           [{:ast/type :ast/leaf,
+             :ast/action :action/log,
+             :ast/payload :a,
+             :ast/id 1,
+             :exec/result :result/success,
+             :exec/timestamp 0,
+             :exec/duration 0,
+             :exec/output :a}
+            {:ast/type :ast/leaf,
+             :ast/action :action/log,
+             :ast/payload :b,
+             :ast/id 2,
+             :exec/result :result/pending}],
+           :id 0}
+     nil]
+    {}]
+   [[#:ast{:type :ast/seq,
+           :nodes
+           [{:ast/type :ast/leaf,
+             :ast/action :action/log,
+             :ast/payload :a,
+             :ast/id 1,
+             :exec/result :result/success,
+             :exec/timestamp 0,
+             :exec/duration 0,
+             :exec/output :a}
+            {:ast/type :ast/leaf,
+             :ast/action :action/log,
+             :ast/payload :b,
+             :ast/id 2,
+             :exec/result :result/success,
+             :exec/timestamp 0,
+             :exec/duration 0,
+             :exec/output :b}],
+           :id 0}
+     nil]
+    {}]])
 
 (def try-rescue-output
   [[#:ast{:type :ast/try,
@@ -171,7 +170,6 @@
       (is (not (job/pending? res)))
       (is (not (job/failed? res)))
       (is (= log-output output))))
-
 
   (testing "failure"
     (let [output (run-ast (ast/fail!!))
@@ -223,7 +221,6 @@
                      :three 5}}
            context))))
 
-
 (deftest runtime-test
 
   (let [runtime   {:foo 123}
@@ -273,7 +270,4 @@
                   {:action-fn action-fn})]
 
       (is (= @counter 3))
-      (reset! counter 0))
-
-
-    ))
+      (reset! counter 0))))
