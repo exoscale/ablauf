@@ -1,4 +1,4 @@
-(defproject exoscale/ablauf "0.1.10-SNAPSHOT"
+(defproject exoscale/ablauf "0.1.10"
   :description "long-running workflow management"
   :url "https://github.com/exoscale/ablauf"
   :license {:name "ISC License"
