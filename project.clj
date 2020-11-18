@@ -8,6 +8,8 @@
                  [manifold            "0.1.9-alpha4"]]
   :deploy-repositories [["snapshots" :clojars]
                         ["releases"  :clojars]]
-  :profiles {:test {:plugins [[lein-difftest "2.0.0"]
-                              [lein-cljfmt   "0.6.7"]]}}
+  :profiles {:test {:plugins   [[lein-difftest "2.0.0"]
+                              [lein-cljfmt   "0.6.7"]]
+                    :pedantic? :abort}
+             :dev  {:pedantic? :ignore}}
   :pedantic? :abort)
