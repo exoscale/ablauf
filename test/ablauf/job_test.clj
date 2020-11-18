@@ -76,54 +76,54 @@
 
 (def finally-restart-step1
   [[#:ast{:type :ast/try,
-        :nodes
-        [#:ast{:type :ast/seq,
-               :nodes
-               [#:ast{:type :ast/par,
-                      :nodes
-                      [{:ast/type :ast/leaf,
-                        :ast/action :record,
-                        :ast/payload :a1,
-                        :ast/id 3,
-                        :exec/result :result/pending}
-                       {:ast/type :ast/leaf,
-                        :ast/action :log,
-                        :ast/payload :a2,
-                        :ast/id 4,
-                        :exec/result :result/pending}],
-                      :id 2}
-                #:ast{:type :ast/leaf,
-                      :action :record,
-                      :payload :b1,
-                      :id 5}],
-               :id 1}
-         #:ast{:type :ast/seq,
-               :nodes
-               [#:ast{:type :ast/leaf,
-                      :action :record,
-                      :payload :r1,
-                      :id 7}],
-               :id 6}
-         #:ast{:type :ast/seq,
-               :nodes
-               [#:ast{:type :ast/leaf,
-                      :action :record,
-                      :payload :f1,
-                      :id 9}],
-               :id 8}],
-        :id 0}
-  nil]
- nil
- [{:ast/type :ast/leaf,
-   :ast/action :record,
-   :ast/payload :a1,
-   :ast/id 3,
-   :exec/result :result/pending}
-  {:ast/type :ast/leaf,
-   :ast/action :log,
-   :ast/payload :a2,
-   :ast/id 4,
-   :exec/result :result/pending}]])
+          :nodes
+          [#:ast{:type :ast/seq,
+                 :nodes
+                 [#:ast{:type :ast/par,
+                        :nodes
+                        [{:ast/type :ast/leaf,
+                          :ast/action :record,
+                          :ast/payload :a1,
+                          :ast/id 3,
+                          :exec/result :result/pending}
+                         {:ast/type :ast/leaf,
+                          :ast/action :log,
+                          :ast/payload :a2,
+                          :ast/id 4,
+                          :exec/result :result/pending}],
+                        :id 2}
+                  #:ast{:type :ast/leaf,
+                        :action :record,
+                        :payload :b1,
+                        :id 5}],
+                 :id 1}
+           #:ast{:type :ast/seq,
+                 :nodes
+                 [#:ast{:type :ast/leaf,
+                        :action :record,
+                        :payload :r1,
+                        :id 7}],
+                 :id 6}
+           #:ast{:type :ast/seq,
+                 :nodes
+                 [#:ast{:type :ast/leaf,
+                        :action :record,
+                        :payload :f1,
+                        :id 9}],
+                 :id 8}],
+          :id 0}
+    nil]
+   nil
+   [{:ast/type :ast/leaf,
+     :ast/action :record,
+     :ast/payload :a1,
+     :ast/id 3,
+     :exec/result :result/pending}
+    {:ast/type :ast/leaf,
+     :ast/action :log,
+     :ast/payload :a2,
+     :ast/id 4,
+     :exec/result :result/pending}]])
 
 (def ast-with-finally
   (ast/try!!

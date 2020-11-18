@@ -3,7 +3,6 @@
             [ablauf.job.ast  :refer :all]
             [clojure.test    :refer :all]))
 
-
 (deftest ast-shape
 
   (testing "Basic AST shapes"
@@ -62,7 +61,7 @@
                :exec/result :result/pending}]
              dispatchs)))
 
-    (let [dispatchs (node/find-dispatchs (try!! (finally!! (log!! :a)) ))]
+    (let [dispatchs (node/find-dispatchs (try!! (finally!! (log!! :a))))]
       (is (= [{:ast/type    :ast/leaf
                :ast/action  :action/log
                :ast/payload :a
@@ -71,11 +70,13 @@
 
 
     ;; Let's play with failures and observe behavior
+
+
     (let [base-ast
           (try!! (log!! :a) (log!! :b)
-               (rescue!! (log!! :r))
-               (finally!!
-                (log!! :f)))
+                 (rescue!! (log!! :r))
+                 (finally!!
+                  (log!! :f)))
 
           first-is-done
           (assoc-in base-ast [:ast/nodes 0 :ast/nodes 0 :exec/result] :result/success)
@@ -131,7 +132,6 @@
 
       (is (empty? (node/find-dispatchs all-done))))))
 
-
 (deftest try-shape
 
   ;; Try is a bit of a special beast since there's no guarantee
@@ -156,7 +156,6 @@
       (is (= #:ast{:type :ast/seq, :nodes []} (rescue-nodes try-ast)))
       (is (= #:ast{:type :ast/seq, :nodes []} (finally-nodes try-ast))))))
 
-
 (deftest expected-failures
 
   (let [base-ast (do!! (fail!!) (log!! :a) (log!! :b))]
@@ -175,8 +174,4 @@
          (node/find-dispatchs
           (update-in base-ast [:ast/nodes 0] assoc
                      :exec/result :result/failure
-                     :exec/output {:fail? true}))))
-
-    )
-
-  )
+                     :exec/output {:fail? true}))))))

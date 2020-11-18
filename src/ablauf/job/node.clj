@@ -45,19 +45,19 @@
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
     (or
-      (and (failed? tnodes)
-           (done? rnodes)
-           (done? fnodes))
+     (and (failed? tnodes)
+          (done? rnodes)
+          (done? fnodes))
 
-      (and (failed? tnodes)
-           (failed? rnodes)
-           (or (done? fnodes) (failed? fnodes)))
+     (and (failed? tnodes)
+          (failed? rnodes)
+          (or (done? fnodes) (failed? fnodes)))
 
-      (and (not (failed? tnodes))
-           (done? tnodes)
-           (done? fnodes))
+     (and (not (failed? tnodes))
+          (done? tnodes)
+          (done? fnodes))
 
-      false)))
+     false)))
 
 (defmulti pending?
   "Predicate to test for pending state of a (sub)node"

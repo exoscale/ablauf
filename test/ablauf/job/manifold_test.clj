@@ -15,7 +15,6 @@
         (d/error-deferred (ex-info "Forced fail" params))
         (d/success-deferred :ok)))))
 
-
 (deftest persist-impacts-execution
   (let [action-fn (fn [{:ast/keys [action payload]}]
                     (case action

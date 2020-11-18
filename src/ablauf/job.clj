@@ -114,7 +114,6 @@
           :else
           (recur (zip/next pos) nodes))))))
 
-
 (defn restart
   "Given a job, and node updates for it, figure
    out the next course of action to take.
