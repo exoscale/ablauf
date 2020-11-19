@@ -6,6 +6,34 @@
   "Predicate to test for failure of a (sub)job"
   :ast/type :hierarchy #'ast/hierarchy)
 
+(defmulti eligible?
+  "Predicate to test for dispatch eligibility of a (sub)node"
+  :ast/type :hierarchy #'ast/hierarchy)
+
+(defmulti done?
+  "Predicate to test for completion of a (sub)job"
+  :ast/type :hierarchy #'ast/hierarchy)
+
+(defmulti pending?
+  "Predicate to test for pending state of a (sub)node"
+  :ast/type :hierarchy #'ast/hierarchy)
+
+(defmulti find-dispatchs
+  "Returns next dispatchable actions for a (sub)node"
+  :ast/type :hierarchy #'ast/hierarchy)
+
+(def done-or-pending?
+  "Predicate to test for completion or pending state of a (sub)node"
+  (some-fn done? pending?))
+
+(def done-or-failed?
+  "Predicate to test for completion or error state of a (sub)node"
+  (some-fn done? failed?))
+
+(def pending-or-eligible?
+  "Predicate to test for pending or future execution of a (sub)node"
+  (some-fn eligible? pending?))
+
 (defmethod failed? :ast/leaf
   [node]
   (contains? #{:result/failure :result/timeout} (:exec/result node)))
@@ -18,12 +46,9 @@
   [node]
   (or
    (and (failed? (ast/try-nodes node))
-        (failed? (ast/rescue-nodes node)))
+        (failed? (ast/rescue-nodes node))
+        (done? (ast/finally-nodes node)))
    (failed? (ast/finally-nodes node))))
-
-(defmulti done?
-  "Predicate to test for completion of a (sub)job"
-  :ast/type :hierarchy #'ast/hierarchy)
 
 (defmethod done? :ast/leaf
   [node]
@@ -44,24 +69,11 @@
   (let [tnodes (ast/try-nodes node)
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
-    (or
-     (and (failed? tnodes)
-          (done? rnodes)
-          (done? fnodes))
-
-     (and (failed? tnodes)
-          (failed? rnodes)
-          (or (done? fnodes) (failed? fnodes)))
-
-     (and (not (failed? tnodes))
-          (done? tnodes)
-          (done? fnodes))
-
-     false)))
-
-(defmulti pending?
-  "Predicate to test for pending state of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+    (not
+     (or (pending-or-eligible? tnodes)
+         (pending-or-eligible? fnodes)
+         (and (failed? tnodes)
+              (pending-or-eligible? rnodes))))))
 
 (defmethod pending? :ast/leaf
   [node]
@@ -80,18 +92,6 @@
         (and (failed? tnodes)
              (pending? rnodes))
         (pending? fnodes))))
-
-(def done-or-pending?
-  "Predicate to test for completion or pending state of a (sub)node"
-  (some-fn done? pending?))
-
-(def done-or-failed?
-  "Predicate to test for completion or error state of a (sub)node"
-  (some-fn done? failed?))
-
-(defmulti eligible?
-  "Predicate to test for dispatch eligibility of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
 
 (defmethod eligible? :ast/leaf
   [node]
@@ -119,10 +119,6 @@
 
       :else
       (eligible? tnodes))))
-
-(defmulti find-dispatchs
-  "Returns next dispatchable actions for a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
 
 (defmethod find-dispatchs :ast/leaf
   [node]
