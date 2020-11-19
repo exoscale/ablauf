@@ -42,6 +42,8 @@
 (defn recording-action-fn
   [state]
   (fn [{:ast/keys [action payload]}]
+    (when (= :action/fail action)
+      (throw (ex-info "fail" {})))
     (when (= :record action)
       (swap! state conj payload))
     payload))
@@ -64,3 +66,43 @@
         action-fn (recording-action-fn state)]
     @(runner (memory-store store) parallel-try-ast {:action-fn action-fn})
     (is (= [:a1 :b1 :f1] @state))))
+
+(def typical-ast
+  (ast/do!!
+   (ast/action!! :a1 {})
+   (ast/try!!
+    (ast/do!!
+     (ast/with-augment [:x :x]
+       (ast/action!! :a2 {}))
+     (ast/do!!
+      (ast/action!! :a3 {})
+      (ast/action!! :a4 {}))
+     (ast/with-augment [:y :y]
+       (ast/action!! :a5 {}))
+     (ast/with-augment [:z :z]
+       (ast/action!! :a6 {}))
+     (ast/action!! :a7 {})
+     (ast/action!! :a8 {})
+     (ast/with-augment [:w :w]
+       (ast/action!! :a9 {})))
+
+    (rescue!!
+     (ast/action!! :r1 {})
+     (ast/fail!!))
+    (finally!!
+     (ast/action!! :f1 {})))))
+
+(deftest typical-ast-test
+  (let [store       (atom [])
+        ast-actions (atom [])
+        action-fn   (fn [{:ast/keys [action]}]
+                      (swap! ast-actions conj action)
+                      (if (or (= :a7 action)
+                              (= :action/fail action))
+                        (d/error-deferred action)
+                        (d/success-deferred action)))]
+
+    (try
+      @(runner (memory-store store) typical-ast {:action-fn action-fn})
+      (catch Exception _))
+    (is (= [:a1 :a2 :a3 :a4 :a5 :a6 :a7 :r1 :action/fail :f1] @ast-actions))))
