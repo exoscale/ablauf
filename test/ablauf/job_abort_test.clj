@@ -1,8 +1,9 @@
 (ns ablauf.job-abort-test
   (:require [ablauf.job.ast :as ast]
             [ablauf.job :refer [abort restart make ast-zip]]
+            [ablauf.job :as job]
             [clojure.test :refer [deftest is testing]]
-            [ablauf.job :as job]))
+            [clojure.test.check.clojure-test :refer [defspec]]))
 
 (deftest restart-test
 
@@ -84,6 +85,7 @@
   (testing "aborting a ast that is to be dispatched should work"
     (let [[restarted-job] (restart (make ast-with-finally) [])
           aborted-job     (abort restarted-job)]
+
       (testing "steps are marked as aborted"
         (is (= finally-abort-step1 aborted-job)))
 
@@ -100,8 +102,7 @@
         (is (job/failed? aborted-job)))
 
       (testing "aborted job is not eligible "
-        (is (job/eligible? aborted-job)))
+        (is (not (job/eligible? aborted-job))))
 
       (testing "aborted job is not pending "
         (is (not (job/pending? aborted-job)))))))
-

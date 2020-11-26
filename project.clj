@@ -12,6 +12,7 @@
                                 [lein-cljfmt   "0.6.7"]
                                 [lein-cloverage "1.1.2"]]
                     :pedantic? :abort}
-             :dev  {:pedantic? :ignore}}
+             :dev  {:pedantic? :ignore
+                    :dependencies [[org.clojure/test.check "1.1.0"]]}}
   :aliases {"coverage" ["with-profile" "+test" "cloverage"]}
   :pedantic? :abort)

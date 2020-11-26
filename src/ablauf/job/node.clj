@@ -128,18 +128,18 @@
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
     (cond
-      (failed? tnodes)
-      (or (eligible? rnodes) (eligible? fnodes))
-
-      (done? tnodes)
-      (eligible? fnodes)
-
       ;; if any clause aborted we won't run finally
       ;; unsure about this one, because we may want to run finally even on abort
       (or (aborted? tnodes)
           (aborted? rnodes)
           (aborted? fnodes))
       false
+
+      (failed? tnodes)
+      (or (eligible? rnodes) (eligible? fnodes))
+
+      (done? tnodes)
+      (eligible? fnodes)
 
       :else
       (eligible? tnodes))))
