@@ -49,7 +49,7 @@
                     [{:ast/type    :ast/leaf,
                       :ast/action  :action/log,
                       :ast/payload {:a :a},
-                      :ast/augment #:augment {:source :a, :dest :a},
+                      :ast/augment #:augment {:source :a, :dest :b},
                       :ast/id      0,
                       :exec/result :result/success,
                       :exec/output {:a :a}}])
@@ -58,11 +58,11 @@
               :ast/payload {:a :a}
               :ast/id      0
               :ast/augment {:augment/source :a
-                            :augment/dest   :a}
+                            :augment/dest   :b}
               :exec/result :result/success
               :exec/output {:a :a}}
              nil]
-            {:a :a} ;; context updated
+            {:b :a} ;; context updated
             nil])))) ;; no new dispatchs, we're done
 
 (def finally-restart-step1
