@@ -11,8 +11,8 @@
   :profiles {:test {:plugins   [[lein-difftest "2.0.0"]
                                 [lein-cljfmt   "0.6.7"]
                                 [lein-cloverage "1.1.2"]]
+                    :dependencies [[org.clojure/test.check "1.1.0"]]
                     :pedantic? :abort}
-             :dev  {:pedantic? :ignore
-                    :dependencies [[org.clojure/test.check "1.1.0"]]}}
+             :dev  {:pedantic? :ignore}}
   :aliases {"coverage" ["with-profile" "+test" "cloverage"]}
   :pedantic? :abort)
