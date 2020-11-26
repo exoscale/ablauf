@@ -113,6 +113,17 @@ With the proposed approach, given unique IDs for executions, storing
 the full execution tree after each restart provides full introspection
 into the state of each job.
 
+##### Terminology for job statuses
+
+Some job status can have more than one `true` predicate:
+
+| status | `done?` | `failed?` | `eligible?` | `pending?` | `aborted?` |
+|--------|---------|-----------|-------------|------------|------------| 
+| `:job/aborted` | Y | Y | N | N | Y |
+| `:job/failure` | Y | Y | N | N | N |
+| `:job/success` | Y | N | N | N | N |
+| `:job/pending` | N | N | Y | Y | N |
+
 ### Terminology
 
 #### AST
