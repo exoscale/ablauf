@@ -17,4 +17,6 @@
           (job/restart (job/make-with-context ast context) [])]
      (if (job/done? job)
        [job context]
-       (recur (job/restart [job context] (pmap action-fn dispatchs)))))))
+       (recur (job/restart [job context]
+                           (pmap #(action-fn (assoc % :exec/context context))
+                                 dispatchs)))))))

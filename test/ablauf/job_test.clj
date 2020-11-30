@@ -1,9 +1,9 @@
-(ns ablauf.job-test
-  (:require [ablauf.job.ast  :as ast]
-            [ablauf.job.sync :as sync]
-            [ablauf.job      :refer [restart make make-with-context
-                                     ast-zip status]]
-            [clojure.test    :refer [deftest is testing]]))
+> (ns ablauf.job-test
+    (:require [ablauf.job.ast  :as ast]
+              [ablauf.job.sync :as sync]
+              [ablauf.job      :refer [restart make make-with-context
+                                       ast-zip status]]
+              [clojure.test    :refer [deftest is testing]]))
 
 (deftest restart-test
 

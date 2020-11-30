@@ -42,6 +42,17 @@
        (some?
         (:augment/dest augment))))
 
+(defn errored?
+  ""
+  [{:exec/keys [result] :as node}]
+  (and (some? node)
+       (not= :result/success result)))
+
+(defn lift-error
+  ""
+  [context {:exec/keys [output]}]
+  (assoc context :exec/last-error output))
+
 (defn augment
   "When an AST node contains an `augment` key, process it to
    augment the resulting context. Augments have a source:
@@ -70,7 +81,11 @@
            pos     job
            nodes   nodes]
       (let [node    (first nodes)
-            context (cond-> context (augmentable? node) (augment node))]
+            context (cond-> context
+                      (augmentable? node)
+                      (augment node)
+                      (errored? node)
+                      (lift-error node))]
         (cond
           (nil? node)
           [(ast-zip (zip/root pos)) context]

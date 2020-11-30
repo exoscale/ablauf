@@ -64,7 +64,7 @@
       :exec/timestamp 0
       :exec/duration 0}
      nil]
-    {}]])
+    {:exec/last-error :error/error}]])
 
 (def simple-do-output
 
