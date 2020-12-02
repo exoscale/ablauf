@@ -151,7 +151,7 @@
   [job]
   (let [dispatchs (node/find-dispatchs (zip/node job))
         pending   (node/find-pending (zip/node job))
-        to-abort  (if (empty? dispatchs) pending dispatchs)
+        to-abort  (concat pending dispatchs)
         aborted   (map node/abort to-abort)]
     (merge-dispatchs job aborted)))
 
