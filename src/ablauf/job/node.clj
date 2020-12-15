@@ -87,7 +87,7 @@
         (not
          (or (pending-or-eligible? tnodes)
              (pending-or-eligible? fnodes)
-             (and (or (failed? tnodes))
+             (and (failed? tnodes)
                   (pending-or-eligible? rnodes)))))))
 
 (defmethod pending? :ast/leaf
@@ -96,7 +96,8 @@
 
 (defmethod pending? :ast/branch
   [node]
-  (some pending? (:ast/nodes node)))
+  (and (not (failed? node))
+       (some pending? (:ast/nodes node))))
 
 (defmethod pending? :ast/try
   [node]
@@ -114,11 +115,14 @@
 
 (defmethod eligible? :ast/par
   [node]
-  (some eligible? (:ast/nodes node)))
+  (and
+   (not (failed? node))
+   (some eligible? (:ast/nodes node))))
 
 (defmethod eligible? :ast/seq
   [node]
   (and
+   (not (failed? node))
    (not (some aborted? (:ast/nodes node)))
    (some eligible? (remove done-or-pending? (:ast/nodes node)))))
 
@@ -170,9 +174,10 @@
 (defn abort
   "Mark a node as aborted. The only valid node state for aborting is pending."
   [{result :exec/result :as node}]
-  {:pre [(or (nil? result)
-             (= :result/pending result))]}
-  (assoc node :exec/result :result/aborted))
+  (cond-> node
+    (or (nil? result)
+        (= :result/pending result))
+    (assoc :exec/result :result/aborted)))
 
 ;;;;
 ;; dispatches
@@ -220,7 +225,7 @@
 
 (defmethod find-pending :ast/leaf
   [node]
-  (if (pending? node) [node]))
+  (when (pending? node) [node]))
 
 (defmethod find-pending :ast/par
   [node]
