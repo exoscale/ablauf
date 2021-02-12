@@ -18,8 +18,8 @@
                              #:ast{:type :ast/seq :nodes []}
                              #:ast{:type :ast/leaf :action :action/log :payload :a}]}]
       (is (= #:ast{:type :ast/par
-                     :nodes [#:ast{:type :ast/leaf :action :action/log :payload :b}
-                             #:ast{:type :ast/leaf :action :action/log :payload :a}]}
+                   :nodes [#:ast{:type :ast/leaf :action :action/log :payload :b}
+                           #:ast{:type :ast/leaf :action :action/log :payload :a}]}
              (prune tree)))))
 
   (testing "do not delete root"
@@ -33,5 +33,5 @@
                              #:ast{:type :ast/leaf :payload {} :action :a}]}]
 
       (is (= #:ast{:type :ast/seq
-                     :nodes [#:ast{:type :ast/leaf :payload {} :action :a}]}
+                   :nodes [#:ast{:type :ast/leaf :payload {} :action :a}]}
              (prune tree))))))
