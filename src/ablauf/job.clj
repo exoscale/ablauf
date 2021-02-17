@@ -219,3 +219,19 @@
     (eligible? ast) :job/pending
     :else           (throw (ex-info "Wrong AST job state"
                                     {}))))
+
+(defn prune
+  "Remove empties :ast/nodes leaves"
+  [ast]
+  (loop [zipper (zip/next (ast-zip ast))]
+    (if (zip/end? zipper)
+      (zip/root zipper)
+      (let [{:ast/keys [nodes]} (zip/node zipper)]
+        (cond
+          (and (some? nodes)
+               (zip/path zipper)
+               (empty? nodes))
+          (recur (zip/remove zipper))
+
+          :else
+          (recur (zip/next zipper)))))))
