@@ -225,10 +225,10 @@
   [ast]
   (loop [zipper (zip/next (ast-zip ast))]
     (if (zip/end? zipper)
-      (zip/node zipper)
+      (zip/root zipper)
       (let [{:ast/keys [nodes]} (zip/node zipper)]
         (cond
-          (and nodes
+          (and (some? nodes)
                (zip/path zipper)
                (empty? nodes))
           (recur (zip/remove zipper))
