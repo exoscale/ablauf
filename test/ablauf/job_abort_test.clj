@@ -1,7 +1,6 @@
 (ns ablauf.job-abort-test
   (:require [ablauf.job.ast :as ast]
-            [ablauf.job :refer [abort restart make ast-zip]]
-            [ablauf.job :as job]
+            [ablauf.job :as job :refer [abort restart make ast-zip]]
             [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]))
 

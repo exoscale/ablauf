@@ -22,6 +22,10 @@
   "Predicate to test for pending state of a (sub)node"
   :ast/type :hierarchy #'ast/hierarchy)
 
+(defmulti idempotent?
+  "Predicate to test for idempotency of a (sub)node"
+  :ast/type :hierarchy #'ast/hierarchy)
+
 (defmulti find-dispatchs
   "Returns next dispatchable actions for a (sub)node"
   :ast/type :hierarchy #'ast/hierarchy)
@@ -42,6 +46,10 @@
   "Predicate to test for pending or future execution of a (sub)node"
   (some-fn eligible? pending?))
 
+(def pending-and-idempotent?
+  "Predicate to test for idempotent and pending state of a (sub)node"
+  (every-pred idempotent? pending?))
+
 (defmethod failed? :ast/leaf
   [node]
   (contains? #{:result/failure :result/timeout :result/aborted} (:exec/result node)))
@@ -58,6 +66,12 @@
         (failed? (ast/rescue-nodes node))
         (done? (ast/finally-nodes node)))
    (failed? (ast/finally-nodes node))))
+
+(defmethod idempotent? :ast/leaf
+  [{idempotent :ast/idempotent?}]
+  idempotent)
+
+(defmethod idempotent? :default [_] false)
 
 (defmethod done? :ast/leaf
   [node]

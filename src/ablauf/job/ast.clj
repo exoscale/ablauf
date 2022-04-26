@@ -14,6 +14,7 @@
 (s/def :ast/action    keyword?)
 (s/def :ast/payload   any?)
 (s/def :ast/type      #{:ast/leaf :ast/seq :ast/par :ast/try})
+(s/def :ast/idempotent? boolean?)
 
 (defmulti  spec-by-ast-type :ast/type :hierarchy #'hierarchy)
 
@@ -23,7 +24,8 @@
 
 (defmethod spec-by-ast-type :ast/leaf
   [_]
-  (s/keys :req [:ast/action :ast/payload]))
+  (s/keys :req [:ast/action :ast/payload]
+          :opt [:ast/idempotent?]))
 
 (s/def ::ast (s/multi-spec spec-by-ast-type :ast/type))
 
@@ -45,10 +47,18 @@
    :ast/payload txt})
 
 (defn action!!
-  [type payload]
-  {:ast/type    :ast/leaf
-   :ast/action  type
-   :ast/payload payload})
+  ([type payload]
+   {:ast/type    :ast/leaf
+    :ast/action  type
+    :ast/payload payload})
+  ([type payload {:keys [idempotent?] :as _opts}]
+   (cond-> {:ast/type    :ast/leaf
+            :ast/action  type
+            :ast/payload payload}
+     (some? idempotent?) (assoc :ast/idempotent? idempotent?))))
+
+(defn idempotent-action!! [type payload]
+  (action!! type payload {:idempotent? true}))
 
 (defn fail!!
   "Forcibly fail action"

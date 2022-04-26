@@ -129,6 +129,30 @@
           :else
           (recur (zip/next pos) nodes))))))
 
+(defn replay-prepare
+  "It will traverse the whole job and:
+    1. mark as unstarted all pending idempotent leafs
+    2. mark as failure all pending non idempotent leafs
+
+    Yields the modified job"
+  [job]
+  (loop [loc job]
+    (let [node (zip/node loc)]
+      (cond
+        (zip/end? loc)
+        (ast-zip (zip/root loc))
+
+        (node/pending-and-idempotent? node)
+        (recur (zip/next (zip/edit loc dissoc :exec/result)))
+
+        (and
+         (ast/leaf? node)
+         (node/pending? node))
+        (recur (zip/next (zip/edit loc assoc :exec/result :result/failure)))
+
+        :else
+        (recur (zip/next loc))))))
+
 (defn restart
   "Given a job, and node updates for it, figure
    out the next course of action to take.

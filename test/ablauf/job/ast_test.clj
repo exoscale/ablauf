@@ -25,7 +25,30 @@
            #:ast{:type :ast/par,
                  :nodes
                  [#:ast{:type :ast/leaf, :action :action/log, :payload :a}
-                  #:ast{:type :ast/leaf, :action :action/log, :payload :b}]})))
+                  #:ast{:type :ast/leaf, :action :action/log, :payload :b}]}))
+
+    (is (= (idempotent-action!! :idempotent-action {:a "payload"})
+           #:ast{:action      :idempotent-action
+                 :payload     {:a "payload"}
+                 :idempotent? true
+                 :type        :ast/leaf}))
+
+    (is (= (action!! :idempotent-action {:a "payload"} {:idempotent? true})
+           #:ast{:action      :idempotent-action
+                 :payload     {:a "payload"}
+                 :idempotent? true
+                 :type        :ast/leaf}))
+
+    (is (= (action!! :idempotent-action {:a "payload"} {:idempotent? false})
+           #:ast{:action      :idempotent-action
+                 :payload     {:a "payload"}
+                 :idempotent? false
+                 :type        :ast/leaf}))
+
+    (is (= (action!! :idempotent-action {:a "payload"})
+           #:ast{:action  :idempotent-action
+                 :payload {:a "payload"}
+                 :type    :ast/leaf})))
 
   (testing "AST dispatchs for log!!"
 
@@ -53,6 +76,14 @@
                :ast/payload :b
                :exec/result :result/pending}]
              dispatchs)))
+
+    (let [dispatchs (node/find-dispatchs
+                     (assoc (action!! :action/log {:a :a} {:idempotent? false}) :exec/result :result/pending))]
+      (is (nil? dispatchs)))
+
+    (let [dispatchs (node/find-dispatchs
+                     (assoc (action!! :action/log {:a :a} {:idempotent? true}) :exec/result :result/failure))]
+      (is (nil? dispatchs)))
 
     (let [dispatchs (node/find-dispatchs (try!! (log!! :a)))]
       (is (= [{:ast/type    :ast/leaf
