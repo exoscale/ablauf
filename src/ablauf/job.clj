@@ -169,16 +169,6 @@
         dispatchs     (node/find-dispatchs (zip/node job))]
     [(merge-dispatchs job dispatchs) context dispatchs]))
 
-(defn abort
-  "Given a job, aborts the job. Yields an updated job.
-  Dispatches are aborted. If there are no dispatches, then pending nodes are aborted."
-  [job]
-  (let [dispatchs (node/find-dispatchs (zip/node job))
-        pending   (node/find-pending (zip/node job))
-        to-abort  (concat pending dispatchs)
-        aborted   (map node/abort to-abort)]
-    (merge-dispatchs job aborted)))
-
 (defn index-ast
   "Uniquely identifies job nodes, for later merging"
   [pos]
@@ -225,18 +215,10 @@
   [job]
   (node/eligible? (zip/node job)))
 
-(defn aborted?
-  "Predicate to test for abortion of a (sub)job"
-  [job]
-  (node/aborted? (zip/node job)))
-
 (defn status
   "Get the job status from an ast"
   [ast]
   (cond
-    ;; note that this relies on the order of the checks
-    ;; a aborted job is also a done job
-    (aborted? ast)  :job/aborted
     (pending? ast)  :job/pending
     (failed? ast)   :job/failure
     (done? ast)     :job/success

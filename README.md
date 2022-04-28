@@ -117,12 +117,12 @@ into the state of each job.
 
 Some job status can have more than one `true` predicate:
 
-| status | `done?` | `failed?` | `eligible?` | `pending?` | `aborted?` |
-|--------|---------|-----------|-------------|------------|------------| 
-| `:job/aborted` | Y | Y | N | N | Y |
-| `:job/failure` | Y | Y | N | N | N |
-| `:job/success` | Y | N | N | N | N |
-| `:job/pending` | N | N | Y | Y | N |
+| status | `done?` | `failed?` | `eligible?` | `pending?` | 
+|--------|---------|-----------|-------------|------------|
+| `:job/aborted` | Y | Y | N | N |
+| `:job/failure` | Y | Y | N | N | 
+| `:job/success` | Y | N | N | N |
+| `:job/pending` | N | N | Y | Y |
 
 ### Terminology
 

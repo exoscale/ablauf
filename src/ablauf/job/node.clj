@@ -18,10 +18,6 @@
   "Predicate to test for pending state of a (sub)node"
   :ast/type :hierarchy #'ast/hierarchy)
 
-(defmulti aborted?
-  "Predicate to test for pending state of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
-
 (defmulti idempotent?
   "Predicate to test for idempotency of a (sub)node"
   :ast/type :hierarchy #'ast/hierarchy)
@@ -52,7 +48,7 @@
 
 (defmethod failed? :ast/leaf
   [node]
-  (contains? #{:result/failure :result/timeout :result/aborted} (:exec/result node)))
+  (contains? #{:result/failure :result/timeout} (:exec/result node)))
 
 (defmethod failed? :ast/branch
   [node]
@@ -61,7 +57,6 @@
 (defmethod failed? :ast/try
   [node]
   (or
-   (aborted? node) ;; any abort on try/catch is failure
    (and (failed? (ast/try-nodes node))
         (failed? (ast/rescue-nodes node))
         (done? (ast/finally-nodes node)))
@@ -75,34 +70,28 @@
 
 (defmethod done? :ast/leaf
   [node]
-  (contains? #{:result/success :result/failure :result/timeout :result/aborted}
+  (contains? #{:result/success :result/failure :result/timeout}
              (:exec/result node)))
 
 (defmethod done? :ast/seq
   [node]
   (or (failed? node)
-      (aborted? node) ;;effectively (some aborted? node)
       (every? done? (:ast/nodes node))))
 
 (defmethod done? :ast/par
   [node]
-  (or
-   (aborted? node) ;;either some aborted or every one succeeded
-   (every? done? (:ast/nodes node))))
+  (every? done? (:ast/nodes node)))
 
 (defmethod done? :ast/try
   [node]
   (let [tnodes (ast/try-nodes node)
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
-    ;; any node of try/rescue/finally can be aborted
-    ;; to mark the job as done
-    (or (aborted? node)
-        (not
-         (or (pending-or-eligible? tnodes)
-             (pending-or-eligible? fnodes)
-             (and (failed? tnodes)
-                  (pending-or-eligible? rnodes)))))))
+    (not
+     (or (pending-or-eligible? tnodes)
+         (pending-or-eligible? fnodes)
+         (and (failed? tnodes)
+              (pending-or-eligible? rnodes))))))
 
 (defmethod pending? :ast/leaf
   [node]
@@ -137,7 +126,6 @@
   [node]
   (and
    (not (failed? node))
-   (not (some aborted? (:ast/nodes node)))
    (some eligible? (remove done-or-pending? (:ast/nodes node)))))
 
 (defmethod eligible? :ast/try
@@ -146,13 +134,6 @@
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
     (cond
-      ;; if any clause aborted we won't run finally
-      ;; unsure about this one, because we may want to run finally even on abort
-      (or (aborted? tnodes)
-          (aborted? rnodes)
-          (aborted? fnodes))
-      false
-
       (failed? tnodes)
       (or (eligible? rnodes) (eligible? fnodes))
 
@@ -161,40 +142,6 @@
 
       :else
       (eligible? tnodes))))
-
-(defmethod aborted? :ast/leaf
-  [node]
-  (= :result/aborted (:exec/result node)))
-
-(defmethod aborted? :ast/seq
-  [node]
-  (some aborted? (:ast/nodes node)))
-
-(defmethod aborted? :ast/par
-  [node]
-  (some aborted? (:ast/nodes node)))
-
-(defmethod aborted? :ast/try
-  [node]
-  (let [tnodes (ast/try-nodes node)
-        rnodes (ast/rescue-nodes node)
-        fnodes (ast/finally-nodes node)]
-
-    (or (aborted? tnodes)
-        (aborted? fnodes)
-        (and (failed? tnodes)
-             (aborted? rnodes)))))
-
-(defn abort
-  "Mark a node as aborted. The only valid node state for aborting is pending."
-  [{result :exec/result :as node}]
-  (cond-> node
-    (or (nil? result)
-        (= :result/pending result))
-    (assoc :exec/result :result/aborted)))
-
-;;;;
-;; dispatches
 
 (defmethod find-dispatchs :ast/leaf
   [node]

@@ -10,13 +10,9 @@
   (is (= :job/pending
          (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
                                                     :exec/result :result/pending}]}])))
-  (is (= :job/aborted
-         (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
-                                                    :exec/result :result/aborted}]}])))
   (is (= :job/failure
          (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
                                                     :exec/result :result/failure}]}])))
-
   (is (= :job/success
          (status [{:ast/type :ast/seq, :ast/nodes [{:ast/type :ast/leaf
                                                     :exec/result :result/success}]}]))))
