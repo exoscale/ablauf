@@ -129,29 +129,55 @@
           :else
           (recur (zip/next pos) nodes))))))
 
-(defn replay-prepare
-  "It will traverse the whole job and:
-    1. mark as unstarted all pending idempotent leafs
-    2. mark as failure all pending non idempotent leafs
-
-    Yields the modified job"
-  [job]
+(defn- update-tree [job & {:keys [pred action]}]
   (loop [loc job]
     (let [node (zip/node loc)]
       (cond
         (zip/end? loc)
         (ast-zip (zip/root loc))
 
-        (node/pending-and-idempotent? node)
-        (recur (zip/next (zip/edit loc dissoc :exec/result)))
-
-        (and
-         (ast/leaf? node)
-         (node/pending? node))
-        (recur (zip/next (zip/edit loc assoc :exec/result :result/failure)))
+        (pred node)
+        (recur (zip/next (zip/edit loc action)))
 
         :else
         (recur (zip/next loc))))))
+
+(defn- pending-idempotent->unstarted! [job]
+  (update-tree job
+               :pred #(node/pending-and-idempotent? %1)
+               :action #(dissoc %1 :exec/result)))
+
+(defn- pending->failure!
+  ([job]
+   (pending->failure! job nil))
+  ([job reason]
+   (update-tree job
+                :pred #(and
+                        (ast/leaf? %1)
+                        (node/pending? %1))
+                :action #(cond-> %1
+                           reason
+                           (assoc :exec/reason reason)
+                           :else
+                           (assoc :exec/result :result/failure)))))
+
+(defn abort
+  "Given a job, mark pending all pending leafs as failure with the proper reason.
+   Yields an updated job."
+  ([job]
+   (abort job "aborted"))
+  ([job reason]
+   (pending->failure! job reason)))
+
+(defn prepare-replay [job]
+  "It will traverse the whole job and:
+    1. mark as unstarted all pending idempotent leafs
+    2. mark as failure all pending non idempotent leafs
+
+    Yields the modified job"
+  (-> job
+      pending-idempotent->unstarted!
+      pending->failure!))
 
 (defn restart
   "Given a job, and node updates for it, figure
