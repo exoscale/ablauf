@@ -26,10 +26,8 @@
 
 (def gen-random-leaf (gen/one-of [gen-action gen-log gen-random-aug]))
 
-
 ;;;;
 ;; container nodes generators - parameterized
-
 
 (defn gen-random-do
   ([] (gen/let [len   (gen/choose 1 5)
@@ -65,10 +63,8 @@
                 (rescue!! r)
                 (finally!! f)))))
 
-
 ;;;;
 ;; random tree
-
 
 (defn random-container [inner]
   (gen/let [leaf inner]

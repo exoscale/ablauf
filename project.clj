@@ -3,9 +3,12 @@
   :url "https://github.com/exoscale/ablauf"
   :license {:name "ISC License"
             :url  "https://github.com/exoscale/ablauf/tree/master/LICENSE"}
-  :dependencies [[org.clojure/clojure "1.10.1"]
-                 [spootnik/commons    "0.3.0"]
-                 [manifold            "0.1.9-alpha4"]]
+  :dependencies [[org.clojure/clojure               "1.11.1"]
+                 [spootnik/commons                  "0.3.0"]
+                 [mysql/mysql-connector-java        "8.0.30"]
+                 [com.github.seancorfield/next.jdbc "1.3.834"]
+                 [org.clojure/tools.logging         "1.2.1"]
+                 [manifold                          "0.2.4"]]
   :deploy-repositories [["snapshots" :clojars]
                         ["releases"  :clojars]]
   :profiles {:test {:plugins   [[lein-difftest "2.0.0"]

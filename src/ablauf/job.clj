@@ -221,6 +221,10 @@
   [ast context]
   (conj (make ast) context))
 
+(defn reload
+  [ast context]
+  [(ast-zip ast) context])
+
 (defn done?
   "Predicate to test for completion of a (sub)job"
   [job]
@@ -267,3 +271,8 @@
 
           :else
           (recur (zip/next zipper)))))))
+
+(defn unzip
+  ""
+  [zipper]
+  (zip/root zipper))
