@@ -7,15 +7,47 @@
    information about a full workflow run and its current status,
    while `task` is used for both calls to `job/restart` and action
    dispatches."
-  (:require [ablauf.job  :as job]
-            [clojure.edn :as edn]
-            [next.jdbc   :as jdbc]
-            [ablauf.job.ast :as ast]))
+  (:require [clojure.edn :as edn]
+            [next.jdbc :as jdbc]
+            [ablauf.job :as job]
+            [ablauf.job.ast :as ast]
+            [ablauf.job.store :as store]
+            [clojure.tools.logging :as log]))
+
+;; Safe version of functions performing side effects to avoid breaking
+;; the processing loop.
+;;
+;; We apply this logic wherever control is delegated to a third-party
+;; implementation of an action (here `action-fn` for `safe-run` and
+;; `Jobstore#persist` for `safe-persist`
+(defn- safe-run
+  "Reliably produce a *success* or *failure* output from a call to `action-fn`.
+
+   XXX: too primitive, should allow for restarts."
+  [action-fn task]
+  (try
+    (let [res       (action-fn task)
+          deferred? (instance? clojure.lang.IDeref res)]
+      (assoc task
+             :exec/result :result/success
+             :exec/output (cond-> res deferred? deref)))
+    (catch Exception e
+      (let [data (ex-data e)]
+        (assoc task
+               :exec/result :result/failure
+               :exec/output (if-let [output (:error data)]
+                              output
+                              (ex-message e)))))))
+
+(defn- clock
+  "Retrieve the current millisecond epoch"
+  []
+  (System/currentTimeMillis))
 
 ;; This could be parametered to be protobuf + compression or any other
 ;; fast and efficient method
-(def ^:private serialize   pr-str)
-(def ^:private deserialize edn/read-string)
+(def serialize pr-str)
+(def deserialize edn/read-string)
 
 ;; A few functions to get things in and out of the database, with proper
 ;; serialization
@@ -24,38 +56,55 @@
   "A function to fetch the next actionable item out of the database within a
    transaction, skipping locked items."
   [tx]
-  (some-> (jdbc/execute!
-           tx
-           [(str "select * from task"
-                 " where process_at <= now()"
-                 " order by process_at asc"
-                 " limit 1"
-                 " for update skip locked")])
-          (first)
-          (update :task/payload deserialize)))
+  (let [task (jdbc/execute-one!
+              tx
+              ["select * from task where status = 'new' limit 1 for update skip locked"])]
+    (some-> task
+            (update :task/payload deserialize)
+            (assoc :task/status "pending"))))
 
 (defn- workflow-by-id
-  "Fetch workflow from the database and restore stored job data to
+  "Fetch workflow from the database by id and restore stored job data to
    a usable form."
   [tx id]
-  (let [[{:workflow_run/keys [reason ast context] :as wrun}]
-        (jdbc/execute! tx ["select * from workflow_run where id=?" id])]
+  (let [{:workflow_run/keys [reason ast context] :as wrun}
+        (jdbc/execute-one! tx [(str "select id,uuid,status,reason,ast,context "
+                                    "from workflow_run where id=?")
+                               id])]
     (-> wrun
         (dissoc :workflow_run/ast :workflow_run/context)
         (cond-> (some? reason) (assoc :workflow_run/reason reason))
         (assoc :workflow_run/job (job/reload (deserialize ast)
                                              (deserialize context))))))
 
+(defn workflow-by-uuid
+  "Fetch workflow from the database by UUID and restore stored job data to
+   a usable form."
+  [tx uuid]
+  (let [{:workflow_run/keys [reason ast context] :as wrun}
+        (jdbc/execute-one! tx [(str "select id,uuid,status,reason,ast,context "
+                                    "from workflow_run where uuid=?")
+                               (str uuid)])]
+    (-> wrun
+        (dissoc :workflow_run/ast :workflow_run/context)
+        (cond-> (some? reason) (assoc :workflow_run/reason reason))
+        (assoc :workflow_run/job (job/reload (deserialize ast)
+                                             (deserialize context))))))
+
+(defn- workflow-context-by-id
+  [tx id]
+  (-> (jdbc/execute-one! tx ["select context from workflow_run where id=?" id])
+      :workflow_run/context
+      deserialize))
+
 (defn- insert-action
   "Persist a new action to be handled immediately"
-  [tx workflow-id action]
-  (jdbc/execute! tx ["insert into task(type,wid,payload) values(?, ?, ?)"
-                     "action" workflow-id (serialize action)]))
-
-(defn- clean-task
-  "Delete a task from the database once it has been processed"
-  [tx id]
-  (jdbc/execute! tx ["delete from task where id=?" id]))
+  [tx workflow-id workflow-uuid action]
+  ;; default status is "new"
+  (jdbc/execute!
+   tx
+   ["insert into task(type,wid,wuuid,payload) values(?,?,?,?)"
+    "action" workflow-id workflow-uuid (serialize action)]))
 
 (defn- update-workflow
   "After a job restart, store the new state of a workflow"
@@ -67,33 +116,34 @@
                      id]))
 
 (defn- insert-workflow
-  "Add a new workfow"
-  [tx [ast context]]
-  (-> (jdbc/execute! tx ["insert into workflow_run(ast,context) values(?,?)"
-                         (-> ast job/unzip serialize)
-                         (serialize context)]
-                     {:return-keys true})
+  "Register new workfow as ready to be processed"
+  [tx jobstore [ast context] uuid owner system type metadata]
+  (store/sync-persist jobstore uuid context ast)
+  (-> (jdbc/execute!
+       tx [(str "INSERT INTO "
+                "workflow_run(uuid,ast,context,job_owner,job_system,job_type,metadata) "
+                "VALUES(?,?,?,?,?,?,?)")
+           (str uuid)
+           (-> ast job/unzip serialize)
+           (serialize context)
+           owner
+           system
+           type
+           (serialize metadata)]
+       {:return-keys true})
       (first)
       :GENERATED_KEY))
 
 (defn- insert-workflow-restart
   "Schedule a job/restart call"
-  [tx id payload]
-  (jdbc/execute! tx ["insert into task(type,wid,payload) values(?,?,?)"
-                     "workflow" id (serialize payload)]))
+  [tx id uuid payload]
+  (jdbc/execute! tx ["INSERT INTO task(type,wid,wuuid,payload) VALUES(?,?,?,?)"
+                     "workflow" id (str uuid) (serialize payload)]))
 
-(defn- safe-run
-  "Reliably produce a *success* or *failure* output from a call to `action-fn`.
-  
-   XXX: too primitive, should allow for restarts and capturing more data out
-   of exceptions."
-  [action-fn task]
-  (try
-    (assoc task :exec/result :result/success :exec/output (action-fn task))
-    (catch Exception e
-      (assoc task :exec/result
-             :result/failure
-             :exec/reason (ex-message e)))))
+(defn- clean-task
+  "Updates the task status"
+  [tx id]
+  (jdbc/execute! tx ["delete from task where id=?" id]))
 
 (defn- restart-workflow
   "Handler for tasks of type `workflow`. Retrieves current version of the
@@ -101,12 +151,17 @@
    if applicable. This can be thought of as the function to advance the
    instruction pointer within the program, results in a new program and
    updated context."
-  [tx {:task/keys [id wid payload] :or {payload []}}]
-  (let [[ast context actions]
-        (job/restart (:workflow_run/job (workflow-by-id tx wid)) payload)]
-    (update-workflow tx wid ast context)
-    (doseq [action actions]
-      (insert-action tx wid action))))
+  [tx jobstore {:task/keys [wid wuuid payload] :or {payload []}}]
+  (let [workflow (workflow-by-id tx wid)
+        [ast context actions]
+        (job/restart (:workflow_run/job workflow) payload)]
+    (try
+      (update-workflow tx wid ast context)
+      (doseq [action actions]
+        (insert-action tx wid wuuid action))
+      (store/sync-persist jobstore wuuid context ast)
+      (catch Exception e
+        (log/error e "cannot restart worklow" wuuid)))))
 
 (defn- process-task
   "Handler for tasks of type `action`:
@@ -116,9 +171,20 @@
 
    Runs the payload through `action-fn`, handling exceptions through
    `safe-run`."
-  [tx action-fn {:task/keys [id wid payload]}]
-  (let [result (safe-run action-fn payload)]
-    (insert-workflow-restart tx wid [result])))
+  [tx action-fn {:task/keys [wid wuuid payload]}]
+  ;; TODO will we need the context?
+  (let [start       (clock)
+        context     (workflow-context-by-id tx wid)
+        ctx+payload (assoc payload :exec/context context)
+        result      (safe-run action-fn ctx+payload)
+        result+ts   (-> result
+                        (assoc :exec/timestamp start
+                               :exec/duration  (- (clock) start))
+                        (dissoc :exec/context))]
+    (try
+      (insert-workflow-restart tx wid wuuid [result+ts])
+      (catch Exception e
+        (log/error e "cannot process task" wuuid)))))
 
 (defn- process-one
   "Process a new task within a transaction, this function ends up either
@@ -127,52 +193,87 @@
 
    See `restart-workflow` and `process-task` for details on each individual
    action."
-  [db action-fn]
+  [db jobstore action-fn]
   (jdbc/with-transaction [tx db]
     (when-let [task (next-task! tx)]
       (if (= "workflow" (:task/type task))
-        (restart-workflow tx task)
+        (restart-workflow tx jobstore task)
         (process-task tx action-fn task))
-      ;; Delete task so it does not get picked up
-      ;; by a new worker
       (clean-task tx (:task/id task))
       true)))
 
 (defn- process-available
-  "Loop over all immediately available items and process them in separate transactions"
-  [db action-fn stop-fn]
+  "Loop over all immediately available items and process them in
+  separate transactions"
+  [db jobstore action-fn stop-fn]
   (loop []
-    (when (and (process-one db action-fn)
+    (when (and (process-one db jobstore action-fn)
                (not (true? (stop-fn))))
       (recur))))
 
 (defn worker
-  "Until `stop-fn` returns true, process items until the queue is exhausted, then
-   wait for a random amount of time (between `wait-ms` and `wait-ms` + `wait-allowance`).
+  "Until `stop-fn` returns true, process items until the queue is
+  exhausted, then wait for a random amount of time (between `wait-ms`
+  and `wait-ms` + `wait-allowance`).
 
-   As many worker threads as necessary can be started on a single host."
-  [db action-fn wait-ms wait-allowance stop-fn]
+   As many worker threads as necessary can be started on a single
+  host."
+  [db jobstore {:keys [action-fn]} wait-ms wait-allowance stop-fn]
   (loop []
-    (process-available db action-fn stop-fn)
+    (try
+    ;; TODO: try/catch, mark job as failed
+      (process-available db jobstore action-fn stop-fn)
+      (catch Exception e
+        (log/error e "cannot process")))
     (when-not (true? (stop-fn))
       (Thread/sleep (+ wait-ms (rand-int wait-allowance)))
       (recur))))
 
 (defn submit
-  "Create a new job to be processed. Only registers the job entry, no processing
-   will be performed unless at least one separate thread concurrently runs `worker`."
-  [db job context]
+  "Create a new job to be processed. Only registers the job entry, no
+  processing will be performed unless at least one separate thread
+  concurrently runs `worker`."
+  [db jobstore job {:keys [context type system uuid owner metadata]
+                    :or   {context  {}
+                           metadata {}
+                           owner    "unknown"
+                           type     "unknown"
+                           system   "unknown"}}]
   (jdbc/with-transaction [tx db]
-    (let [wid (insert-workflow tx (job/make-with-context job context))]
-      (insert-workflow-restart tx wid []))))
+    (let [ast (job/make-with-context job (dissoc context :exec/runtime))
+          wid (insert-workflow tx jobstore ast uuid owner system type metadata)]
+      (insert-workflow-restart tx wid uuid []))))
 
 (comment
-  (def env {:connection-uri (System/getenv "MARIA_JDBC_URI")})
+  (def db (atom {}))
 
-  (require '[ablauf.job.ast :as ast])
+  (def jobstore
+    (reify store/JobStore
+      (persist [_ uuid context state]
+        (swap! db assoc uuid {:state state :context context}))))
 
-  (defn dumb-fn [task] (:ast/payload task))
+  (def dbenv
+    {:connection-uri (or (System/getenv "MARIA_JDBC_URI")
+                         "jdbc:mysql://root:root@127.0.0.1:3306/ablauf")})
 
-  (submit env (ast/log!! "hello") {:a :b})
+  (defn dumb-fn [task]
+    (:ast/payload task))
 
-  (def f (future (worker env dumb-fn 100 900 (constantly false)))))
+  (reset! db {})
+  (pr @db)
+
+  (def ast (ast/do!!
+            (ast/dopar!!
+             (ast/log!! "hello1")
+             (ast/log!! "hello2"))
+            (ast/log!! "final")))
+
+  (submit dbenv jobstore (ast/log!! "hello") {:context {:a :b}})
+
+  (submit dbenv jobstore (ast/do!! (ast/log!! "hello1") (ast/log!! "hello2")) {:context {:a :b}})
+
+  (submit dbenv jobstore ast {:context {:a :b}})
+
+  (def f (future (worker dbenv jobstore {:action-fn #'dumb-fn} 100 900 (constantly false))))
+
+  "")

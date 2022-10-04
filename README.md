@@ -4,7 +4,32 @@ ablauf: long-running workflow management
 [![cljdoc badge](https://cljdoc.xyz/badge/exoscale/ablauf)](https://cljdoc.org/d/exoscale/ablauf/CURRENT/api/exoscale.ablauf)
 [![Clojars Project](https://img.shields.io/clojars/v/exoscale/ablauf.svg)](https://clojars.org/exoscale/ablauf)
 
-### Wishlist for asynchronous jobs
+Ablauf is intended to provide a simple way to manage long-running
+workflows of actions reaching out to multiple different systems.  It
+provides a way to **express**, **run**, and **inspect**
+workflows. Workflows consist of a series of sequential of parallel
+steps, with minimal flow control.
+
+- **express**: Workflows are defined through either data or a
+  simplistic Clojure DSL. See [Defining
+  workflows](#defining_workflows).
+- **run**: Ablauf workflows can be ran in multiple manners. See
+  [Workflow runners](#workflow_runners).
+- **inspect**: Workflow current state can be stored in a secondary
+  archival store for inspecting currently running and completed
+  workflows.
+
+### What would I use this for?
+
+Ablauf is interesting if you want to
+
+- Need to decouple complex workflow declaration from your code, to
+  more easily inspect them.
+- Want to decouple workflow instantiation from workflow execution.
+- Want to have a simple way to mock workflow execution in testing
+  environments.
+
+### Basics
 
 #### An example language
 
@@ -42,7 +67,7 @@ Would result in the following tree:
 
 This is what `ablauf.ast` provides, with a corresponding spec.
 
-### Job execution
+### Workflow execution
 
 Now that a simplistic but sufficient AST exists, comes the question of its
 execution. It would be trivial to walk the above tree and execute things
@@ -53,18 +78,18 @@ Long running workflows bring three additional requirements to the table:
 
 - Execution should be able to restart from a previous known-state
 - Workflows might need to execute in different contexts
-- Job statuses should be inspectable
+- Workflow statuses should be inspectable
 
-The first requirement mandates that jobs should do their best to
+The first requirement mandates that workflows should do their best to
 provide high availability, the second mandates that workflows should
 be decoupled from their execution environment.
 
-#### An abstract job execution library
+#### An abstract workflow execution library
 
-To fulfill the above requirements, it was assumed that jobs would
+To fulfill the above requirements, it was assumed that workflows would
 either be processed from a manifold-based single-process environment
-or from Kafka consumers depending on the job. So can a simple AST's
-execution be separated from its execution environment?
+or from a durable queue, depending on the workflow type.
+So can a simple AST's execution be separated from its execution environment?
 
 The proposed model here takes inspiration from *Continuation Passing Style*
 (CPS), but proposes passing the resulting syntax tree instead of a procedure.
@@ -78,9 +103,9 @@ make_job    :: AST -> Job
 restart_job :: Job -> [Results] -> Job -> [Actions]
 ```
 
-Here `make_job`, generates a job ready for execution.
+Here `make_job`, generates a workflow ready for execution.
 `restart_job` given a set of results would yield an updated
-job and follow-up actions to take. The namespace in `bundes.job`
+workflow and follow-up actions to take. The namespace in `ablauf.job`
 provides exactly this functionality for the AST described above.
 
 This was simplified by `clojure.zip`'s zippers, a data structure which
@@ -89,56 +114,75 @@ storing AST state that much easier. Gérard Huet wrote a
 [paper](https://www.st.cs.uni-saarland.de/edu/seminare/2005/advanced-fp/docs/huet-zipper.pdf)
 which inspired `clojure.zip`, a recommended read.
 
-##### Execution on Kafka
+### Defining workflows
 
-With Kafka, this strategy would require a topic per action,
-and one for program restarts.
+Workflows consist of a data structure which honors the
+`:ablauf.job.ast/ast` spec. Functions in the `ablauf.job.ast` namespace
+provide a simple DSL to produce valid workflows.
 
-A `restarter` topic receives either new executions or restarts
-with results.
+Let's say that you want to implement a workflow which creates a git
+repository, then a declare a CI job and sentry project in parallel,
+and finally sends a notification to indicate success.
 
-With the provided dispatch actions generated, messages would
-be sent to per-action topics. Upon execution on the per-action topics,
-messages would be sent back to the `restarter` topic.
+``` clojure
+(defn create-deployable [name]
+  (ast/do!!
+    (ast/action!! :git/create-repository {:name name})
+    (ast/dopar!!
+      (ast/action!! :jenkins/create-build {:name name})
+      (ast/action!! :sentry/create-project {:name name}))
+    (ast/action!! :chat/send-message {:message (str "project " name " succesfully created.")})))
+```
 
-##### Execution with Manifold
+#### Workflow actions and context
 
-For an in-process, non distributed version manifold provides sufficient
-facilities to write a simple fully asynchronous executor. A working
-implementation can be found in `ablauf.job.manifold`.
+Workflow leaves are abstract actions and depend on an **action
+function** to be performed. They all require a payload, and produce an
+output. Throughout the workflow execution, a **context** map is provided
+which can be augmented by the result of individual actions.
 
-##### Inspecting state
+To pull data out of an action into the context, `ablauf.job.ast/with-augment` can be used:
 
-With the proposed approach, given unique IDs for executions, storing
-the full execution tree after each restart provides full introspection
-into the state of each job.
+``` clojure
+;; Store the created DSN at the `:sentry/dsn` key in the context.
+(with-augment [:sentry/dsn :sentry/dsn]
+  (action!! :sentry/create-project {:name name}))
+```
 
-##### Terminology for job statuses
+### Workflow runners
 
-Some job status can have more than one `true` predicate:
+Workflow runners walk through a workflow and invoke an action function
+as necessary.  Ablauf comes with two bundled runners:
 
-| status | `done?` | `failed?` | `eligible?` | `pending?` | 
-|--------|---------|-----------|-------------|------------|
-| `:job/aborted` | Y | Y | N | N |
-| `:job/failure` | Y | Y | N | N | 
-| `:job/success` | Y | N | N | N |
-| `:job/pending` | N | N | Y | Y |
+- `ablauf.job.manifold`: An in-memory processor based on
+  [manifold](aleph.io).
+- `ablauf.job.sql`: A SQL-backed processor which decouples job
+  submission and job running.
 
 ### Terminology
 
 #### AST
-AST or abstract syntax tree, is the representation of the ablauf program. It can consist of the following nodes:
 
-* `::ast/leaf`: A node without children. Represents an action the program should take.
-* `::ast/seq`: Represents a list of actions that will be executed sequentially.
-* `::ast/par`: Represents a list of actions that will be executed in parallel.
-* `::ast/try`: A node that contains at most 3 children:
-    * Forms: An `::ast/seq` containing the actions to be tried
-    * Rescue: An `::ast/seq` containing the actions to be executed if the ast in form returns an error
-    * Finally: An `::ast/seq` containing actions that will be executed after either forms or rescue completes.
+AST or abstract syntax tree, is the representation of the ablauf
+program. It can consist of the following nodes:
+
+* `:ast/leaf`: A node without children. Represents an action the
+  program should take.
+* `:ast/seq`: Represents a list of actions that will be executed
+  sequentially.
+* `:ast/par`: Represents a list of actions that will be executed in
+  parallel.
+* `:ast/try`: A node that contains at most 3 children:
+    * Forms: An `:ast/seq` containing the actions to be tried
+    * Rescue: An `:ast/seq` containing the actions to be executed if
+      the ast in form returns an error
+    * Finally: An `:ast/seq` containing actions that will be executed
+      after either forms or rescue completes.
 
 #### Dispatcher
-An `::ast/leaf`, which represents an action performed by the program, is defined by the following spec
+
+An `:ast/leaf`, which represents an action performed by the program,
+is defined by the following spec
 
 ``` clojure
 (defmethod spec-by-ast-type :ast/leaf
@@ -150,53 +194,13 @@ An `::ast/leaf`, which represents an action performed by the program, is defined
 (s/def :ast/payload   any?)
 ```
 
-The `::ast/action` is a keyword that represents the action to be performed. A dispatcher matches this keyword to the actual implementation.
-By default, the manifold runner uses the `dispatch-action` multimethod to route the action to a function that knows how to handle it, based on the `::ast/action` key. It is possible to supply your own dispatcher implementation using the `:action-fn` key in `manifold/runner`.
-
-#### Runner
-The runner is the execution engine that'll schedule and coordinate the actions in the ablauf ast. Since ablauf is based on a continuation passing mechanism, the runner is closely tied to the messaging mechanism. Anything that provides a queue-like abstraction should be usable as the basis for a runner implementation.
-
-At the time of writing the only runner implementation is based around the stream abstraction from the manifold library, which provides an in process queue without durability. This README also contains some pointers for how a runner based on apache Kafka could be made, should more durability be required.
-
-### Future work
-
-#### Conditionals in flow control
-
-Threading a context through operations and providing conditional
-execution is a logical next step. It's unclear yet whether it will be
-needed but would be easy.
-
-#### Lazy topology lookups
-
-The presented work assumes a static AST, dynamic ASTs would be easy to
-add, expanding nodes based on information provided in steps.
-#### Trying out
-
-```clojure
-(require '[ablauf.job.ast      :as ast]
-         '[ablauf.job          :as job]
-         '[ablauf.job.store    :as store]
-         '[ablauf.job.manifold :refer [runner]])
-
-
-(def ast
-  (ast/dopar!!
-    (ast/log!! "a")
-    (ast/try!!
-      (ast/fail!!)
-      (ast/log!! "should-not-run")
-      (rescue!!  (ast/log!! "rescue"))
-      (finally!! (ast/log!! "finally")))))
-
-(let [db            (atom {})
-      store         (store/mem-job-store db)
-      [job context] @(runner store ast {})]
-  ...
-  (job/failed? job) ;;=> false
-  (job/done? job)   ;;=> true
-  @db)
-
-```
+The `::ast/action` is a keyword that represents the action to be
+performed. A dispatcher matches this keyword to the actual
+implementation.  By default, the manifold runner uses the
+`dispatch-action` multimethod to route the action to a function that
+knows how to handle it, based on the `::ast/action` key. It is
+possible to supply your own dispatcher implementation using the
+`:action-fn` key in `manifold/runner`.
 
 ### Caveats
 
@@ -205,5 +209,4 @@ This solution has a few obvious problems:
 #### Storage bloat
 
 Storing the full AST tree, including results, for each step will limit
-the size of jobs that can be created. It does not seem however that
-we will have deep jobs.
+the size of workflows that can be created.

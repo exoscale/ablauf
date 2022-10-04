@@ -22,11 +22,13 @@
 
   For an actual full fledged program runner, a runner using
   **manifold** as the underlying dispatching engine is provided
-  in `ablauf.job.manifold`.
+  in `ablauf.job.manifold`, an SQL backed one in `ablauf.job.sql`.
 "
-  (:require [clojure.zip     :as zip]
-            [ablauf.job.ast  :as ast]
-            [ablauf.job.node :as node]))
+  (:require [clojure.zip        :as zip]
+            [clojure.spec.alpha :as s]
+            [ablauf.job.ast     :as ast]
+            [ablauf.job.node    :as node]
+            [exoscale.ex        :as-alias ex]))
 
 (defn ast-zip
   "Given a well-formed AST (as per `ablauf.job.ast`), yield a zipper"
@@ -42,14 +44,15 @@
        (some?
         (:augment/dest augment))))
 
-(defn errored?
-  ""
+(defn- errored?
+  "Predicate to test for errored nodes"
   [{:exec/keys [result] :as node}]
   (and (some? node)
        (not= :result/success result)))
 
-(defn lift-error
-  ""
+(defn- lift-error
+  "Convenience function to store the last leaf error in the
+   context. Can be thought of as the equivalent of Clojure's `*e`"
   [context {:exec/keys [output]}]
   (assoc context :exec/last-error output))
 
@@ -67,13 +70,17 @@
       (assoc-in dest-vec
                 (cond
                   (sequential? source) (get-in output source)
+                  (= 'identity source) output
                   (keyword? source)    (get output source)
-                  (fn? source)         (source output))))))
+                  :else                (throw (ex-info
+                                               "unknown augment source"
+                                               {::ex/type ::ex/incorrect
+                                                :source   source})))))))
 
 (defn merge-results
   "Updates a job given a list of node updates. Node updates
    either come from an action dispatch return, or from newly
-   found dispatchs"
+   found dispatchs."
   [job context nodes]
   (if (empty? nodes)
     [job context]
@@ -92,9 +99,9 @@
 
           (zip/end? pos)
           (throw (ex-info (format "unknown job node: %s" (:ast/id node))
-                          {:type :error/illegal-state
-                           :pos  pos
-                           :node node}))
+                          {::ex/type ::ex/incorrect
+                           :pos      pos
+                           :node     node}))
 
           (= (:ast/id node) (:ast/id (zip/node pos)))
           (recur context
@@ -119,9 +126,9 @@
 
           (zip/end? pos)
           (throw (ex-info (format "unknown job node: %s" (:ast/id node))
-                          {:type :error/illegal-state
-                           :pos  pos
-                           :node node}))
+                          {::ex/type ::ex/incorrect
+                           :pos      pos
+                           :node     node}))
 
           (= (:ast/id node) (:ast/id (zip/node pos)))
           (recur (-> pos (zip/edit merge node) (zip/next)) (rest nodes))
@@ -169,12 +176,13 @@
   ([job reason]
    (pending->failure! job reason)))
 
-(defn prepare-replay [job]
+(defn prepare-replay
   "It will traverse the whole job and:
     1. mark as unstarted all pending idempotent leafs
     2. mark as failure all pending non idempotent leafs
 
     Yields the modified job"
+  [job]
   (-> job
       pending-idempotent->unstarted!
       pending->failure!))
@@ -210,10 +218,14 @@
       :else
       (recur (inc i) (zip/next (zip/edit pos assoc :ast/id i))))))
 
-(def make
+(defn make
   "Creates a job, suitable for `restart` from a valid AST as
    produced by functions in `ablauf.job.ast`"
-  (comp index-ast ast-zip))
+  [ast]
+  (when-not (s/valid? ::ast/ast ast)
+    (throw (ex-info (s/explain ::ast/ast ast)
+                    {:ast ast ::ex/type ::ex/incorrect})))
+  (index-ast (ast-zip ast)))
 
 (defn make-with-context
   "Creates a job, attaching an initial context map, as for `make`,
@@ -222,31 +234,73 @@
   (conj (make ast) context))
 
 (defn reload
+  "Yield a job ready for restart from a data ast and an optional context."
   [ast context]
-  [(ast-zip ast) context])
+  [(ast-zip ast) (if (some? context) context {})])
 
 (defn done?
-  "Predicate to test for completion of a (sub)job"
+  "Predicate to test for completion of a (sub)job
+   Here is the per-status breakdown:
+
+   | status | `done?` |
+   |--------|---------|
+   | `:job/failure` | Y |
+   | `:job/success` | Y |
+   | `:job/pending` | N |
+  "
   [job]
   (node/done? (zip/node job)))
 
 (defn failed?
-  "Predicate to test for failure of a (sub)job"
+  "Predicate to test for failure of a (sub)job
+   Here is the per-status breakdown:
+
+   | status | `failed?` |
+   |--------|---------|
+   | `:job/failure` | Y |
+   | `:job/success` | N |
+   | `:job/pending` | N |
+  "
   [job]
   (node/failed? (zip/node job)))
 
 (defn pending?
-  "Predicate to test for pending completion of a (sub)job"
+  "Predicate to test for pending completion of a (sub)job
+   Here is the per-status breakdown:
+
+   | status | `pending?` |
+   |--------|---------|
+   | `:job/failure` | N |
+   | `:job/success` | N |
+   | `:job/pending` | Y |
+  "
   [job]
   (node/pending? (zip/node job)))
 
 (defn eligible?
-  "Predicate to test for pending completion of a (sub)job"
+  "Predicate to test for pending completion of a (sub)job.
+   Here is the per-status breakdown:
+
+   | status | `eligible?` |
+   |--------|---------|
+   | `:job/failure` | N |
+   | `:job/success` | N |
+   | `:job/pending` | Y |
+  "
   [job]
   (node/eligible? (zip/node job)))
 
 (defn status
-  "Get the job status from an ast"
+  "
+  Get the job status from an ast.
+
+  Status predicates breakdown:
+  | status | `done?` | `failed?` | `eligible?` | `pending?` |
+  |--------|---------|-----------|-------------|------------|
+  | `:job/failure` | Y | Y | N | N |
+  | `:job/success` | Y | N | N | N |
+  | `:job/pending` | N | N | Y | Y |
+  "
   [ast]
   (cond
     (pending? ast)  :job/pending
@@ -254,7 +308,7 @@
     (done? ast)     :job/success
     (eligible? ast) :job/pending
     :else           (throw (ex-info "Wrong AST job state"
-                                    {}))))
+                                    {::ex/type ::ex/fault}))))
 
 (defn prune
   "Remove empties :ast/nodes leaves"
@@ -273,6 +327,6 @@
           (recur (zip/next zipper)))))))
 
 (defn unzip
-  ""
+  "Get back to a data AST from a program's zipper"
   [zipper]
   (zip/root zipper))

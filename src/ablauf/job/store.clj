@@ -7,7 +7,7 @@
 (defn mem-job-store
   [db]
   (reify JobStore
-    (persist [this uuid context state]
+    (persist [_ uuid context state]
       (swap! db assoc uuid {:state state :context context}))))
 
 (defn safe-persist
@@ -22,3 +22,8 @@
       (d/error-deferred (ex-info "assertion-error" {} ae)))
     (catch Exception e
       (d/error-deferred e))))
+
+(defn sync-persist
+  [jobstore uuid context state]
+  (let [res (persist jobstore uuid context state)]
+    (cond-> res (instance? clojure.lang.IDeref res) deref)))

@@ -16,7 +16,7 @@
 (s/def :ast/type      #{:ast/leaf :ast/seq :ast/par :ast/try})
 (s/def :ast/idempotent? boolean?)
 
-(defmulti  spec-by-ast-type :ast/type :hierarchy #'hierarchy)
+(defmulti ^:private spec-by-ast-type :ast/type :hierarchy #'hierarchy)
 
 (defmethod spec-by-ast-type :ast/branch
   [_]
@@ -64,6 +64,7 @@
   "Forcibly fail action"
   []
   {:ast/type    :ast/leaf
+   :ast/payload {}
    :ast/action  :action/fail})
 
 (defn do!!
@@ -124,6 +125,15 @@
   (get (:ast/nodes node) 2))
 
 (defn with-augment
-  "Provide a source and dest for `bundes.job/augment`"
+  "Provide a source and dest for ast augment: after node execution,
+  take the value from `source` and put it in the context's key
+  `dest`. Both `source` and `dest` can be a keyword or a sequence of
+  keywords. see `ablauf.job/augment` for more details."
   [[source dest] node]
+  (when-not (or (keyword? source)
+                (sequential? source)
+                (= 'identity source))
+    (throw (ex-info "unsupported source type"
+                    {:source           source
+                     :exoscale.ex/type :exoscale.ex/incorrect})))
   (assoc node :ast/augment #:augment{:source source :dest dest}))

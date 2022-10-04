@@ -21,7 +21,7 @@
 
 (def gen-random-aug (gen/let [leaf (gen/one-of [gen-action gen-log])
                               k    gen/keyword]
-                      (ast/with-augment [identity k]
+                      (ast/with-augment ['identity k]
                         leaf)))
 
 (def gen-random-leaf (gen/one-of [gen-action gen-log gen-random-aug]))

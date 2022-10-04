@@ -13,7 +13,7 @@
            #:ast{:type :ast/leaf, :action :action/log, :payload {:a :b}
                  :augment #:augment{:source :a, :dest :log-result}}))
 
-    (is (= (fail!!) #:ast{:type :ast/leaf, :action :action/fail}))
+    (is (= (fail!!) #:ast{:type :ast/leaf, :action :action/fail, :payload {}}))
 
     (is (= (do!! (log!! :a) (log!! :b))
            #:ast{:type :ast/seq,
@@ -192,6 +192,7 @@
     (is (=
          [{:ast/type    :ast/leaf,
            :ast/action  :action/fail,
+           :ast/payload {},
            :exec/result :result/pending}]
          (node/find-dispatchs base-ast)))
 
@@ -204,4 +205,3 @@
           (update-in base-ast [:ast/nodes 0] assoc
                      :exec/result :result/failure
                      :exec/output {:fail? true}))))))
-

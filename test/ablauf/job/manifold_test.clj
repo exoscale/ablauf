@@ -1,35 +1,45 @@
 (ns ablauf.job.manifold-test
-  (:require [manifold.stream :as stream]
-            [manifold.deferred :as d]
-            [ablauf.job :as job]
+  (:require [manifold.deferred :as d]
+            [clojure.tools.logging :as log]
             [ablauf.job.ast :as ast]
             [ablauf.job.store :as store]
             [ablauf.job.manifold :refer [runner]]
+            [ablauf.job.sql-utils :as sqlu :refer [deftestp]]
+            [ablauf.job.manifold-sql :as msql]
             [clojure.walk :as walk]
             [clojure.test :refer :all]))
 
+(use-fixtures :once (partial sqlu/reset-db-fixture sqlu/test-spec))
+
+(def sql-runner (msql/make-sql-runner sqlu/test-spec))
+
 (defn- mock-store [{:keys [fail?] :as params}]
   (reify store/JobStore
-    (persist [this uuid context state]
+    (persist [_ _uuid _context _state]
       (if fail?
         (d/error-deferred (ex-info "Forced fail" params))
         (d/success-deferred :ok)))))
 
-(deftest persist-impacts-execution
+(deftestp persist-impacts-execution
+  [arunner [runner sql-runner]]
   (let [action-fn (fn [{:ast/keys [action payload]}]
                     (case action
                       :action/fail (d/error-deferred :error/error)
-                      ::inc (d/success-deferred (inc payload))))
+                      ::inc        (d/success-deferred (inc payload))))
         ast       (ast/action!! ::inc 1)]
 
     (testing "Persist should work normally"
-      (let [res (runner (mock-store {:fail? false}) ast {:action-fn action-fn})
+      (log/info "starting with" arunner)
+      (let [res (arunner (mock-store {:fail? false}) ast {:action-fn action-fn})
             [[{result :exec/output}] _] @res]
-        (is (= 2 result))))
+        (log/info "res:" @res)
+        (is (= 2 result))
+        (log/info "result is:" result "(should be 2)")))
 
     (testing "When persist returns a failed deferred execution is halted"
       (is (thrown? Exception
-                   @(runner (mock-store {:fail? true}) ast {:action-fn action-fn}))))))
+                   (let [res @(arunner (mock-store {:fail? true}) ast {:action-fn action-fn})]
+                     (log/info "exception result:" res)))))))
 
 (def parallel-try-ast
   (ast/try!!
@@ -58,13 +68,14 @@
                                        :exec/timestamp
                                        :exec/duration
                                        :exec/output))
-                            state)))))
+                            state))
+      (d/success-deferred true))))
 
-(deftest parallelization-in-try-test
+(deftestp persist-parallelization-in-try-test-execution [arunner [runner sql-runner]]
   (let [state     (atom [])
         store     (atom [])
         action-fn (recording-action-fn state)]
-    @(runner (memory-store store) parallel-try-ast {:action-fn action-fn})
+    @(arunner (memory-store store) parallel-try-ast {:action-fn action-fn})
     (is (= [:a1 :b1 :f1] @state))))
 
 (def typical-ast
@@ -92,7 +103,7 @@
     (finally!!
      (ast/action!! :f1 {})))))
 
-(deftest typical-ast-test
+(deftestp typical-ast-test [arunner [runner sql-runner]]
   (let [store       (atom [])
         ast-actions (atom [])
         action-fn   (fn [{:ast/keys [action]}]
@@ -103,6 +114,6 @@
                         (d/success-deferred action)))]
 
     (try
-      @(runner (memory-store store) typical-ast {:action-fn action-fn})
+      @(arunner (memory-store store) typical-ast {:action-fn action-fn})
       (catch Exception _))
     (is (= [:a1 :a2 :a3 :a4 :a5 :a6 :a7 :r1 :action/fail :f1] @ast-actions))))

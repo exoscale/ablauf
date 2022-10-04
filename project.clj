@@ -4,18 +4,25 @@
   :license {:name "ISC License"
             :url  "https://github.com/exoscale/ablauf/tree/master/LICENSE"}
   :dependencies [[org.clojure/clojure               "1.11.1"]
-                 [spootnik/commons                  "0.3.0"]
+                 [spootnik/commons                  "0.3.2"]
                  [mysql/mysql-connector-java        "8.0.30"]
                  [com.github.seancorfield/next.jdbc "1.3.834"]
-                 [org.clojure/tools.logging         "1.2.1"]
-                 [manifold                          "0.2.4"]]
+                 [org.clojure/tools.logging         "1.2.4"]
+                 [manifold                          "0.2.4"]
+                 [migratus                          "1.4.4"]]
   :deploy-repositories [["snapshots" :clojars]
                         ["releases"  :clojars]]
-  :profiles {:test {:plugins   [[lein-difftest "2.0.0"]
-                                [lein-cljfmt   "0.6.7"]
-                                [lein-cloverage "1.1.2"]]
-                    :dependencies [[org.clojure/test.check "1.1.0"]]
-                    :pedantic? :abort}
-             :dev  {:pedantic? :ignore}}
-  :aliases {"coverage" ["with-profile" "+test" "cloverage"]}
+  :humane {:dependencies [[pjstadig/humane-test-output "0.11.0"]]
+           :injections   [(require 'pjstadig.humane-test-output)
+                          (pjstadig.humane-test-output/activate!)]}
+  :profiles {:test {:plugins      [[lein-cljfmt                "0.9.0"]
+                                   [lein-cloverage             "1.2.4"]
+                                   [lein-test-report-junit-xml "0.2.0"]]
+                    :dependencies [[org.clojure/test.check     "1.1.1"]]
+                    :pedantic?    :abort}
+             :dev  {:pedantic?    :ignore
+                    :dependencies [[ch.qos.logback/logback-core    "1.4.4"]
+                                   [ch.qos.logback/logback-classic "1.4.4"]]}}
+  :aliases {"coverage" ["with-profile" "+test" "cloverage"]
+            "difftest" ["with-profile" "+humane,+test" "test"]}
   :pedantic? :abort)

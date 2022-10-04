@@ -9,5 +9,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Shutdown Ubuntu MySQL (SUDO)
+      run: sudo service mysql stop
+    - uses: mirromutth/mysql-action@v1.1
+      with:
+        mysql root password: 'root'
+        mysql database: 'ablauf'
+        mysql user: 'ablauf'
+        mysql password: 'ablauf'
     - name: Lint and test
       run: lein with-profile test do cljfmt check, difftest

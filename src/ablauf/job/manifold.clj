@@ -114,7 +114,7 @@
   (let [runtime-context (assoc context :exec/runtime runtime)
         [job :as acc]   (job/make-with-context ast runtime-context)
         input           (s/stream buffer (restart-transducer acc))
-        id              (or id (java.util.UUID/randomUUID))
+        id              (or id (random-uuid))
         result          (d/deferred)
         dispatcher      (or action-fn dispatch-action)]
     ;; Force a first synchronous persist call, this will throw if

@@ -1,0 +1,1 @@
+{:lint-as {ablauf.job.sql-utils/deftestp clojure.core/defn}}
