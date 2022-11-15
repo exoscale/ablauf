@@ -61,6 +61,7 @@
               ["select * from task where status = 'new' limit 1 for update skip locked"])]
     (some-> task
             (update :task/payload deserialize)
+            (update :task/wuuid parse-uuid)
             (assoc :task/status "pending"))))
 
 (defn- workflow-by-id
@@ -73,6 +74,7 @@
                                id])]
     (-> wrun
         (dissoc :workflow_run/ast :workflow_run/context)
+        (update :workflow_run/uuid parse-uuid)
         (cond-> (some? reason) (assoc :workflow_run/reason reason))
         (assoc :workflow_run/job (job/reload (deserialize ast)
                                              (deserialize context))))))
@@ -87,6 +89,7 @@
                                (str uuid)])]
     (-> wrun
         (dissoc :workflow_run/ast :workflow_run/context)
+        (update :workflow_run/uuid parse-uuid)
         (cond-> (some? reason) (assoc :workflow_run/reason reason))
         (assoc :workflow_run/job (job/reload (deserialize ast)
                                              (deserialize context))))))
@@ -104,7 +107,7 @@
   (jdbc/execute!
    tx
    ["insert into task(type,wid,wuuid,payload) values(?,?,?,?)"
-    "action" workflow-id workflow-uuid (serialize action)]))
+    "action" workflow-id (str workflow-uuid) (serialize action)]))
 
 (defn- update-workflow
   "After a job restart, store the new state of a workflow"
