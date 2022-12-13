@@ -11,20 +11,20 @@
   "Install database schema"
   ([]
    (migrate-db test-spec true))
-  ([tx]
-   (migrate-db tx true))
-  ([tx rollback?]
+  ([db]
+   (migrate-db db true))
+  ([db rollback?]
    (let [cfg {:store                :database
               :migration-dir        "migrations/"
               :migration-table-name "migrations"
-              :db                   tx}]
+              :db                   db}]
      (doseq [id (migratus/completed-list cfg)]
        (migratus/rollback cfg))
      (migratus/migrate cfg))))
 
 (defn reset-db-fixture
   [db-spec f]
-  (migrate-db)
+  (migrate-db db-spec)
   (f))
 
 (defmacro deftestp

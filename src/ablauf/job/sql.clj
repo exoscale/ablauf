@@ -12,7 +12,8 @@
             [ablauf.job :as job]
             [ablauf.job.ast :as ast]
             [ablauf.job.store :as store]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log])
+  (:import [clojure.lang ExceptionInfo]))
 
 ;; Safe version of functions performing side effects to avoid breaking
 ;; the processing loop.
@@ -64,20 +65,25 @@
             (update :task/wuuid parse-uuid)
             (assoc :task/status "pending"))))
 
-(defn- workflow-by-id
+(defn- workflow-by-id-for-update
   "Fetch workflow from the database by id and restore stored job data to
    a usable form."
   [tx id]
   (let [{:workflow_run/keys [reason ast context] :as wrun}
         (jdbc/execute-one! tx [(str "select id,uuid,status,reason,ast,context "
-                                    "from workflow_run where id=?")
+                                    "from workflow_run where id=? for update skip locked")
                                id])]
-    (-> wrun
-        (dissoc :workflow_run/ast :workflow_run/context)
-        (update :workflow_run/uuid parse-uuid)
-        (cond-> (some? reason) (assoc :workflow_run/reason reason))
-        (assoc :workflow_run/job (job/reload (deserialize ast)
-                                             (deserialize context))))))
+    (if (nil? wrun)
+      ;; some other worker was updating the workflow (eg: dopar!! leafs finished at same time)
+      ;; let's throw and retry up the stack
+      (throw (ex-info (format "Could not acquire lock on workflow id %s" id) {:workflow_run/id id
+                                                                              :cause           :workflow/locked}))
+      (some-> wrun
+              (dissoc :workflow_run/ast :workflow_run/context)
+              (update :workflow_run/uuid parse-uuid)
+              (cond-> (some? reason) (assoc :workflow_run/reason reason))
+              (assoc :workflow_run/job (job/reload (deserialize ast)
+                                                   (deserialize context)))))))
 
 (defn workflow-by-uuid
   "Fetch workflow from the database by UUID and restore stored job data to
@@ -141,7 +147,7 @@
   "Schedule a job/restart call"
   [tx id uuid payload]
   (jdbc/execute! tx ["INSERT INTO task(type,wid,wuuid,payload) VALUES(?,?,?,?)"
-                     "workflow" id (str uuid) (serialize payload)]))
+                     "workflow" id (str uuid) (serialize payload)] {:return-keys true}))
 
 (defn- clean-task
   "Updates the task status"
@@ -155,16 +161,23 @@
    instruction pointer within the program, results in a new program and
    updated context."
   [tx jobstore {:task/keys [wid wuuid payload] :or {payload []}}]
-  (let [workflow (workflow-by-id tx wid)
-        [ast context actions]
-        (job/restart (:workflow_run/job workflow) payload)]
+  ;; NOTE: a dopar!! ast can be picked up by two different threads
+  ;; when they both want to update the same workflow, only one of them may win
+  ;; either we
+  ;; - run with serializable TX AND retry AND account for idempotency on retry
+  ;; - OR just ensure a single worker can restart the workflow AT A TIME
+  ;;   so, workflow-by-id-for-update will try and acquire a lock in order to update the job
+
+  (let [workflow (workflow-by-id-for-update tx wid)
+        [ast context actions] (job/restart (:workflow_run/job workflow) payload)]
     (try
       (update-workflow tx wid ast context)
       (doseq [action actions]
         (insert-action tx wid wuuid action))
       (store/sync-persist jobstore wuuid context ast)
       (catch Exception e
-        (log/error e "cannot restart worklow" wuuid)))))
+        (log/error e "cannot restart worklow" wuuid)
+        (throw e)))))
 
 (defn- process-task
   "Handler for tasks of type `action`:
@@ -184,10 +197,7 @@
                         (assoc :exec/timestamp start
                                :exec/duration  (- (clock) start))
                         (dissoc :exec/context))]
-    (try
-      (insert-workflow-restart tx wid wuuid [result+ts])
-      (catch Exception e
-        (log/error e "cannot process task" wuuid)))))
+    (insert-workflow-restart tx wid wuuid [result+ts])))
 
 (defn- process-one
   "Process a new task within a transaction, this function ends up either
@@ -210,7 +220,18 @@
   separate transactions"
   [db jobstore action-fn stop-fn]
   (loop []
-    (when (and (process-one db jobstore action-fn)
+    (when (and (try
+                 (process-one db jobstore action-fn)
+                 (catch ExceptionInfo e
+                   ;; if we aborted due to workflow locked, just let it recur
+                   ;; otherwise preserve previous behaviour
+                   ;; dont throw up so we don't exhaust runner threads
+                   (when (= :workflow/locked (-> e ex-data :cause))
+                     (log/infof "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
+                     ;; let it retry
+                     true))
+                 (catch Exception e
+                   (log/error e "cannot process task")))
                (not (true? (stop-fn))))
       (recur))))
 
@@ -224,7 +245,7 @@
   [db jobstore {:keys [action-fn]} wait-ms wait-allowance stop-fn]
   (loop []
     (try
-    ;; TODO: try/catch, mark job as failed
+      ;; TODO: try/catch, mark job as failed
       (process-available db jobstore action-fn stop-fn)
       (catch Exception e
         (log/error e "cannot process")))

@@ -43,7 +43,10 @@
         (deref res)
 
         (testing "data was archived"
-          (is (some? (query-workflow uuid))))))))
+          (is (some? (query-workflow uuid))))
+
+        (testing "Tasks are cleaned"
+          (is (empty? (query-task uuid))))))))
 
 (deftest job-failure-archival-test
   (let [ast (ast/action!! :action/fail 1)]
@@ -55,5 +58,11 @@
         ;;wait
         (is (thrown? Exception (deref res)))
 
-        (testing "data was archived"
-          (is (some? (query-workflow uuid))))))))
+        (testing "job was still marked as failure"
+          (is (= "failure" (:workflow_run/status (query-workflow uuid)))))
+
+        (testing "Workflow run exists"
+          (is (some? (query-workflow uuid))))
+
+        (testing "Tasks are cleaned"
+          (is (empty? (query-task uuid))))))))
