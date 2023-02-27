@@ -6,7 +6,7 @@
 (defn make-sql-runner
   "SQL runner compatible with the manifold one, useful to test against both."
   [db-spec]
-  (fn sql-runner [store ast {:keys [action-fn id context]}]
+  (fn sql-runner [store ast {:keys [action-fn error-handler id context]}]
     (let [the-id    (or id (random-uuid))
           get-job   (fn [] (sql/workflow-by-uuid db-spec the-id))
           job-done? (fn [] (some? (#{"success" "failure"}
@@ -15,7 +15,7 @@
       (d/future
         (try
           (sql/submit db-spec store ast {:context context :uuid the-id})
-          (sql/worker db-spec store {:action-fn action-fn} 100 900 job-done?)
+          (sql/worker db-spec store {:action-fn action-fn :error-handler error-handler} 100 900 job-done?)
           (log/info "done processing job")
           (let [r (get-job)]
             (cond

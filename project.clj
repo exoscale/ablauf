@@ -18,7 +18,8 @@
   :profiles {:test {:plugins      [[lein-cljfmt                "0.9.0"]
                                    [lein-cloverage             "1.2.4"]
                                    [lein-test-report-junit-xml "0.2.0"]]
-                    :dependencies [[org.clojure/test.check     "1.1.1"]]
+                    :dependencies [[org.clojure/test.check     "1.1.1"]
+                                   [tortue/spy "2.13.0"]]
                     :pedantic?    :abort}
              :dev  {:pedantic?    :ignore
                     :dependencies [[ch.qos.logback/logback-core    "1.4.4"]

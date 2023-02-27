@@ -217,38 +217,41 @@
 
 (defn- process-available
   "Loop over all immediately available items and process them in
-  separate transactions"
-  [db jobstore action-fn stop-fn]
-  (loop []
-    (when (and (try
-                 (process-one db jobstore action-fn)
-                 (catch ExceptionInfo e
-                   ;; if we aborted due to workflow locked, just let it recur
-                   ;; otherwise preserve previous behaviour
-                   ;; dont throw up so we don't exhaust runner threads
-                   (when (= :workflow/locked (-> e ex-data :cause))
-                     (log/infof "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
-                     ;; let it retry
-                     true))
-                 (catch Exception e
-                   (log/error e "cannot process task")))
-               (not (true? (stop-fn))))
-      (recur))))
+  separate transactions."
+  ([db jobstore action-fn stop-fn]
+   (process-available db jobstore action-fn stop-fn nil))
+  ([db jobstore action-fn stop-fn error-handler]
+   (loop []
+     (when (and (try
+                  (process-one db jobstore action-fn)
+                  (catch ExceptionInfo e
+                    ;; if we aborted due to workflow locked, just let it recur
+                    ;; otherwise preserve previous behaviour
+                    ;; dont throw up so we don't exhaust runner threads
+                    (when (= :workflow/locked (-> e ex-data :cause))
+                      (log/infof "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
+                      ;; let it retry
+                      true))
+                  (catch Exception e
+                    (log/error e "Caught exception")
+                    (when error-handler (error-handler e))))
+                (not (true? (stop-fn))))
+       (recur)))))
 
 (defn worker
   "Until `stop-fn` returns true, process items until the queue is
   exhausted, then wait for a random amount of time (between `wait-ms`
   and `wait-ms` + `wait-allowance`).
 
-   As many worker threads as necessary can be started on a single
-  host."
-  [db jobstore {:keys [action-fn]} wait-ms wait-allowance stop-fn]
+  If `stop-fn` throws, the worker will exit.
+
+  If `error-handler` is supplied, it will be called with the caught exception.
+  If the error handler (re)throws, the worker will stop processing and quit.
+
+  As many worker threads as necessary can be started on a single host."
+  [db jobstore {:keys [action-fn error-handler]} wait-ms wait-allowance stop-fn]
   (loop []
-    (try
-      ;; TODO: try/catch, mark job as failed
-      (process-available db jobstore action-fn stop-fn)
-      (catch Exception e
-        (log/error e "cannot process")))
+    (process-available db jobstore action-fn stop-fn error-handler)
     (when-not (true? (stop-fn))
       (Thread/sleep (+ wait-ms (rand-int wait-allowance)))
       (recur))))
