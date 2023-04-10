@@ -18,8 +18,9 @@
               :migration-dir        "migrations/"
               :migration-table-name "migrations"
               :db                   db}]
-     (doseq [id (migratus/completed-list cfg)]
-       (migratus/rollback cfg))
+     (when rollback?
+       (doseq [id (migratus/completed-list cfg)]
+         (migratus/rollback cfg)))
      (migratus/migrate cfg))))
 
 (defn reset-db-fixture

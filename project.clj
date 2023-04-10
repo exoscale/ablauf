@@ -15,7 +15,7 @@
   :humane {:dependencies [[pjstadig/humane-test-output "0.11.0"]]
            :injections   [(require 'pjstadig.humane-test-output)
                           (pjstadig.humane-test-output/activate!)]}
-  :profiles {:test {:plugins      [[lein-cljfmt                "0.9.0"]
+  :profiles {:test {:plugins      [[lein-cljfmt                "0.9.0" :exclusions [org.clojure/clojure]]
                                    [lein-cloverage             "1.2.4"]
                                    [lein-test-report-junit-xml "0.2.0"]]
                     :dependencies [[org.clojure/test.check     "1.1.1"]

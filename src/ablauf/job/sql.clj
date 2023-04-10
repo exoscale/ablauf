@@ -195,7 +195,7 @@
         result      (safe-run action-fn ctx+payload)
         result+ts   (-> result
                         (assoc :exec/timestamp start
-                               :exec/duration  (- (clock) start))
+                               :exec/duration (- (clock) start))
                         (dissoc :exec/context))]
     (insert-workflow-restart tx wid wuuid [result+ts])))
 
@@ -209,6 +209,7 @@
   [db jobstore action-fn]
   (jdbc/with-transaction [tx db]
     (when-let [task (next-task! tx)]
+      (log/debugf "Worker picked up task with id %s" (:task/id task))
       (if (= "workflow" (:task/type task))
         (restart-workflow tx jobstore task)
         (process-task tx action-fn task))
@@ -270,6 +271,39 @@
     (let [ast (job/make-with-context job (dissoc context :exec/runtime))
           wid (insert-workflow tx jobstore ast uuid owner system type metadata)]
       (insert-workflow-restart tx wid uuid []))))
+
+(defn retry
+  "Retries a given job by its id. If the job is in a replayable state, it will register a job entry for restarting the job.
+  Returns `true` if the job is retryable, `false` otherwise.
+  Will throw an exception if the job is has not terminated.
+  The processing should be done by a `worker` thread."
+  [db jobstore wid]
+  ;; very similar to restart-workflow
+  (jdbc/with-transaction [tx db]
+    (let [{:workflow_run/keys [job uuid status]} (workflow-by-id-for-update tx wid)
+          [ast context _] (job/restart job [])
+          updated-context (assoc context :exec/retries (inc (get context :exec/retries 0)))
+          replayable-ast  (job/prepare-replay ast)]
+
+      ;; preflight check: don't try to retry ongoing job
+      (when-not (job/done? ast)
+        (throw (ex-info "workflow run has not terminated" {:workflow_run/uuid uuid :workflow_run/status status})))
+
+      ;; can't replay, bail
+      (if (job/done? replayable-ast)
+        false
+        ;; else
+        (try
+          (update-workflow tx wid replayable-ast updated-context)
+          (let [job                   (job/make-with-context (job/unzip replayable-ast) updated-context)
+                [ast context actions] (job/restart job [])]
+            (doseq [action actions]
+              (insert-action tx wid uuid action))
+            (store/sync-persist jobstore uuid context ast))
+          true
+          (catch Exception e
+            (log/error e "cannot restart worklow" uuid)
+            (throw e)))))))
 
 (comment
   (def db (atom {}))

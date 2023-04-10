@@ -154,6 +154,14 @@
                :pred #(node/pending-and-idempotent? %1)
                :action #(dissoc %1 :exec/result)))
 
+(defn- idempotent->unstarted! [job]
+  ;; failed leafs can also be retried
+  (update-tree job
+               :pred #(and (node/idempotent? %1)
+                           (or (node/pending? %1)
+                               (node/failed? %1)))
+               :action #(dissoc %1 :exec/result)))
+
 (defn- pending->failure!
   ([job]
    (pending->failure! job nil))
@@ -178,13 +186,14 @@
 
 (defn prepare-replay
   "It will traverse the whole job and:
-    1. mark as unstarted all pending idempotent leafs
+    1. mark as unstarted all (pending or failed) idempotent leafs
     2. mark as failure all pending non idempotent leafs
 
     Yields the modified job"
   [job]
   (-> job
-      pending-idempotent->unstarted!
+      ;pending-idempotent->unstarted!
+      idempotent->unstarted!
       pending->failure!))
 
 (defn restart
