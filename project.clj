@@ -24,6 +24,7 @@
              :dev  {:pedantic?    :ignore
                     :dependencies [[ch.qos.logback/logback-core    "1.4.4"]
                                    [ch.qos.logback/logback-classic "1.4.4"]]}}
+  :global-vars {*warn-on-reflection* true}
   :aliases {"coverage" ["with-profile" "+test" "cloverage"]
             "difftest" ["with-profile" "+humane,+test" "test"]}
   :pedantic? :abort)

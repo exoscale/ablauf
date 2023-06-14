@@ -254,7 +254,7 @@
   (loop []
     (process-available db jobstore action-fn stop-fn error-handler)
     (when-not (true? (stop-fn))
-      (Thread/sleep (+ wait-ms (rand-int wait-allowance)))
+      (Thread/sleep (long (+ wait-ms (rand-int wait-allowance))))
       (recur))))
 
 (defn submit
