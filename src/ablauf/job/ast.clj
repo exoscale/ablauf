@@ -3,22 +3,23 @@
    to build it"
   (:require [clojure.spec.alpha :as s]))
 
-(def hierarchy
-  "AST node types hierarchy"
-  (-> (make-hierarchy)
-      (derive :ast/seq :ast/branch)
-      (derive :ast/par :ast/branch)
-      (derive :ast/try :ast/branch)))
-
 (s/def :ast/nodes     (s/coll-of ::ast))
 (s/def :ast/action    keyword?)
 (s/def :ast/payload   any?)
 (s/def :ast/type      #{:ast/leaf :ast/seq :ast/par :ast/try})
 (s/def :ast/idempotent? boolean?)
 
-(defmulti ^:private spec-by-ast-type :ast/type :hierarchy #'hierarchy)
+(defmulti ^:private spec-by-ast-type :ast/type)
 
-(defmethod spec-by-ast-type :ast/branch
+(defmethod spec-by-ast-type :ast/seq
+  [_]
+  (s/keys :req [:ast/nodes]))
+
+(defmethod spec-by-ast-type :ast/par
+  [_]
+  (s/keys :req [:ast/nodes]))
+
+(defmethod spec-by-ast-type :ast/try
   [_]
   (s/keys :req [:ast/nodes]))
 
@@ -32,7 +33,7 @@
 (defn branch?
   "Predicate to test whether a node is a branch"
   [node]
-  (isa? hierarchy (:ast/type node) :ast/branch))
+  (contains? #{:ast/par :ast/seq :ast/try} (:ast/type node)))
 
 (defn leaf?
   "Predicate to test whether a node is a leaf"

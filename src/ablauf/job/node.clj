@@ -4,31 +4,31 @@
 
 (defmulti failed?
   "Predicate to test for failure of a (sub)job"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti eligible?
   "Predicate to test for dispatch eligibility of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti done?
   "Predicate to test for completion of a (sub)job"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti pending?
   "Predicate to test for pending state of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti idempotent?
   "Predicate to test for idempotency of a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti find-dispatchs
   "Returns next dispatchable actions for a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (defmulti find-pending
   "Returns next pending actions for a (sub)node"
-  :ast/type :hierarchy #'ast/hierarchy)
+  :ast/type)
 
 (def done-or-pending?
   "Predicate to test for completion or pending state of a (sub)node"
@@ -50,16 +50,29 @@
   [node]
   (contains? #{:result/failure :result/timeout} (:exec/result node)))
 
-(defmethod failed? :ast/branch
+(defmethod failed? :ast/par
   [node]
-  (some failed? (:ast/nodes node)))
+  (if (empty? (:ast/nodes node))
+    false
+    (boolean
+     (some failed? (:ast/nodes node)))))
+
+(defmethod failed? :ast/seq
+  [node]
+  (if (empty? (:ast/nodes node))
+    false
+    (boolean
+     (some failed? (:ast/nodes node)))))
 
 (defmethod failed? :ast/try
   [node]
   (or
-   (and (failed? (ast/try-nodes node))
-        (failed? (ast/rescue-nodes node))
-        (done? (ast/finally-nodes node)))
+   (and
+    (not (pending-or-eligible? node))
+    (if (seq (:ast/nodes (ast/rescue-nodes node)))
+      (and (failed? (ast/try-nodes node))
+           (failed? (ast/rescue-nodes node)))
+      (failed? (ast/try-nodes node))))
    (failed? (ast/finally-nodes node))))
 
 (defmethod idempotent? :ast/leaf
@@ -97,10 +110,17 @@
   [node]
   (= :result/pending (:exec/result node)))
 
-(defmethod pending? :ast/branch
+(defmethod pending? :ast/seq
   [node]
-  (and (not (failed? node))
-       (some pending? (:ast/nodes node))))
+  (boolean
+   (and (not (failed? node))
+        (some pending? (:ast/nodes node)))))
+
+(defmethod pending? :ast/par
+  [node]
+  (boolean
+   (and (not (failed? node))
+        (some pending? (:ast/nodes node)))))
 
 (defmethod pending? :ast/try
   [node]
@@ -154,10 +174,10 @@
    (mapcat find-dispatchs (:ast/nodes node))))
 
 (defmethod find-dispatchs :ast/seq
-  [{:ast/keys [nodes] :as node}]
-  (when-not (failed? node)
-    (when-some [remaining (first (drop-while done? nodes))]
-      (find-dispatchs remaining))))
+  [{:ast/keys [nodes]}]
+  (when-let [node (first (drop-while #(and (done? %) (not (failed? %))) nodes))]
+    (when-not (or (failed? node) (pending? node))
+      (find-dispatchs node))))
 
 (defmethod find-dispatchs :ast/try
   [node]
@@ -165,57 +185,12 @@
         rnodes (ast/rescue-nodes node)
         fnodes (ast/finally-nodes node)]
     (cond
+      (eligible? tnodes)
+      (find-dispatchs tnodes)
+
       (and (failed? tnodes)
            (eligible? rnodes))
       (find-dispatchs rnodes)
 
-      (and (failed? tnodes)
-           (done-or-failed? rnodes))
-      (find-dispatchs fnodes)
-
-      (and (not (eligible? tnodes))
-           (eligible? fnodes))
-      (find-dispatchs fnodes)
-
-      (eligible? tnodes)
-      (find-dispatchs tnodes))))
-
-;;;;
-;; pending
-;; the code is basically the same as find-dispatches, minus the predicate
-
-(defmethod find-pending :ast/leaf
-  [node]
-  (when (pending? node) [node]))
-
-(defmethod find-pending :ast/par
-  [node]
-  (vec
-   (mapcat find-pending (:ast/nodes node))))
-
-(defmethod find-pending :ast/seq
-  [{:ast/keys [nodes] :as node}]
-  (when-not (failed? node)
-    (when-some [remaining (first (drop-while done? nodes))]
-      (find-pending remaining))))
-
-(defmethod find-pending :ast/try
-  [node]
-  (let [tnodes (ast/try-nodes node)
-        rnodes (ast/rescue-nodes node)
-        fnodes (ast/finally-nodes node)]
-    (cond
-      (and (failed? tnodes)
-           (eligible? rnodes))
-      (find-pending rnodes)
-
-      (and (failed? tnodes)
-           (done-or-failed? rnodes))
-      (find-pending fnodes)
-
-      (and (not (eligible? tnodes))
-           (eligible? fnodes))
-      (find-pending fnodes)
-
-      (eligible? tnodes)
-      (find-pending tnodes))))
+      (eligible? fnodes)
+      (find-dispatchs fnodes))))

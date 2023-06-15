@@ -149,11 +149,6 @@
         :else
         (recur (zip/next loc))))))
 
-(defn- pending-idempotent->unstarted! [job]
-  (update-tree job
-               :pred #(node/pending-and-idempotent? %1)
-               :action #(dissoc %1 :exec/result)))
-
 (defn- idempotent->unstarted! [job]
   ;; failed leafs can also be retried
   (update-tree job
@@ -196,6 +191,10 @@
       idempotent->unstarted!
       pending->failure!))
 
+(defn find-dispatchs
+  [job]
+  (node/find-dispatchs (zip/node job)))
+
 (defn restart
   "Given a job, and node updates for it, figure
    out the next course of action to take.
@@ -209,7 +208,7 @@
    for `reductions` or similar functions."
   [[job context] results]
   (let [[job context] (merge-results job context results)
-        dispatchs     (node/find-dispatchs (zip/node job))]
+        dispatchs     (find-dispatchs job)]
     [(merge-dispatchs job dispatchs) context dispatchs]))
 
 (defn index-ast

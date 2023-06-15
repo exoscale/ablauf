@@ -3,7 +3,9 @@
             [ablauf.job.sync :as sync]
             [ablauf.job      :refer [restart make make-with-context
                                      ast-zip status]]
-            [clojure.test    :refer [deftest is testing]]))
+            [clojure.test    :refer [deftest is testing are]]
+            [ablauf.job :as job]
+            [ablauf.job.node :as node]))
 
 (deftest restart-test
 
@@ -143,3 +145,165 @@
     (sync/run ast-with-finally action-fn)
     (testing "running the 'ast-with-finally' job works"
       (is (= [:a1 :b1 :f1] @state)))))
+
+(defn simple-action-fn
+  [{:ast/keys [action] :as x}]
+  (assoc x :exec/result
+         (if (= :action/fail action) :result/failure :result/success)
+         :exec/output action
+         :ast/augment #:augment{:source 'identity :dest :result}))
+
+(defn run-sync
+  [ast]
+  (let [[job {:keys [result]}] (sync/run ast simple-action-fn)
+        status                 (job/status job)]
+    [status result job]))
+
+(def simple-ast-do
+  (ast/do!!
+   (ast/action!! :1 {})
+   (ast/action!! :2 {})))
+
+(def simple-ast-do-fail
+  (ast/do!!
+   (ast/action!! :1 {})
+   (ast/fail!!)
+   (ast/action!! :3 {})))
+
+(def simple-ast-try-rescue
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/fail!!)
+   (ast/fail!!)
+   (rescue!!
+    (ast/action!! :4 {}))))
+
+(def simple-ast-try-rescue-fail
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/fail!!)
+   (rescue!!
+    (ast/action!! :2 {})
+    (ast/fail!!))))
+
+(def simple-ast-try-rescue-finally
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/fail!!)
+   (ast/fail!!)
+   (rescue!!
+    (ast/action!! :2 {}))
+   (finally!!
+    (ast/action!! :3 {})
+    (ast/fail!!))))
+
+(def simple-ast-try-finally
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/fail!!)
+   (finally!!
+    (ast/action!! :4 {}))))
+
+(def simple-ast-try-finally-ok
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/action!! :2 {})
+   (finally!!
+    (ast/action!! :3 {}))))
+
+(def simple-ast-try-finally-fail
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/action!! :2 {})
+   (ast/action!! :3 {})
+   (finally!!
+    (ast/fail!!))))
+
+(def simple-ast-try
+  (ast/try!!
+   (ast/action!! :1 {})
+   (ast/action!! :2 {})
+   (rescue!!
+    (ast/fail!!))))
+
+(def typical-ast1
+  (ast/do!!
+   (ast/action!! :a1 {})
+   (ast/try!!
+    (ast/do!!
+     (ast/with-augment [:x :x]
+       (ast/action!! :a2 {}))
+     (ast/do!!
+      (ast/action!! :a3 {})
+      (ast/action!! :a4 {}))
+     (ast/with-augment [:y :y]
+       (ast/action!! :a5 {}))
+     (ast/with-augment [:z :z]
+       (ast/action!! :a6 {}))
+     (ast/fail!!)
+     (ast/action!! :a8 {})
+     (ast/with-augment [:w :w]
+       (ast/action!! :a9 {})))
+    (rescue!!
+     (ast/action!! :r1 {})
+     (ast/fail!!))
+    (finally!!
+     (ast/action!! :f1 {})))))
+
+(def typical-ast2
+  (ast/do!!
+   (ast/action!! :a1 {})
+   (ast/try!!
+    (ast/do!!
+     (ast/with-augment [:x :x]
+       (ast/action!! :a2 {}))
+     (ast/do!!
+      (ast/action!! :a3 {})
+      (ast/action!! :a4 {}))
+     (ast/with-augment [:y :y]
+       (ast/action!! :a5 {}))
+     (ast/with-augment [:z :z]
+       (ast/action!! :a6 {}))
+     (ast/action!! :a7 {})
+     (ast/action!! :a8 {})
+     (ast/with-augment [:w :w]
+       (ast/action!! :a9 {})))
+    (rescue!!
+     (ast/action!! :r1 {})
+     (ast/fail!!))
+    (finally!!
+     (ast/action!! :f1 {})))))
+
+(def typical-ast3
+  (ast/try!!
+   (ast/fail!!)
+   (rescue!!
+    (ast/fail!!))
+   (finally!!
+    (ast/action!! :f1 {}))))
+
+(def typical-ast4
+  (ast/do!! typical-ast3))
+
+(def typical-ast5
+  (ast/do!!
+   (ast/action!! :a1 {})
+   (ast/action!! :a2 {})))
+
+(deftest run-simple-asts-test
+  (are [ast status result]
+       (= [status result] (take 2 (run-sync ast)))
+    simple-ast-do                 :job/success :2
+    simple-ast-try                :job/success :2
+    simple-ast-do-fail            :job/failure :1
+    simple-ast-try-rescue         :job/success :4
+    simple-ast-try-rescue-fail    :job/failure :2
+    simple-ast-try-rescue-finally :job/failure :3
+    simple-ast-try-finally        :job/failure :4
+    simple-ast-try-finally-ok     :job/success :3
+    simple-ast-try-finally-fail   :job/failure :3
+    typical-ast1                  :job/failure :f1
+    typical-ast2                  :job/success :f1
+    typical-ast3                  :job/failure :f1
+    typical-ast4                  :job/failure :f1
+    typical-ast5                  :job/success :a2))
