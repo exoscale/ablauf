@@ -1,0 +1,1 @@
+{:linters {:unresolved-symbol {:exclude [(ablauf.job.ast/try!! [rescue!! finally!!])]}}}
