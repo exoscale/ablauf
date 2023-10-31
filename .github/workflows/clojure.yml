@@ -19,3 +19,5 @@ jobs:
         mysql password: 'ablauf'
     - name: Lint and test
       run: lein with-profile test do cljfmt check, difftest
+      env:
+        MARIA_JDBC_URI: "jdbc:mysql://root:root@127.0.0.1:3306/ablauf?serverTimezone=UTC"

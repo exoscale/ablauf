@@ -19,10 +19,11 @@
                                    [lein-cloverage             "1.2.4"]
                                    [lein-test-report-junit-xml "0.2.0"]]
                     :dependencies [[org.clojure/test.check     "1.1.1"]
-                                   [tortue/spy "2.13.0"]]
+                                   [tortue/spy "2.13.0"]
+                                   [hikari-cp/hikari-cp "3.0.1" :exclusions [org.slf4j/slf4j-api]]]
                     :pedantic?    :abort}
              :dev  {:pedantic?    :ignore
-                    :dependencies [[ch.qos.logback/logback-core    "1.4.4"]
+                    :dependencies [[ch.qos.logback/logback-core "1.4.4"]
                                    [ch.qos.logback/logback-classic "1.4.4"]]}}
   :global-vars {*warn-on-reflection* true}
   :aliases {"coverage" ["with-profile" "+test" "cloverage"]

@@ -1,36 +1,18 @@
-(ns ablauf.job.sql-test
+(ns ablauf.job.sql.basic-test
   (:require [manifold.deferred :as d]
             [ablauf.job.ast :as ast]
-            [ablauf.job.store :as store]
-            [ablauf.job.manifold :refer [runner]]
-            [ablauf.job.sql-utils :as sqlu]
+            [ablauf.job.sql.utils :as sqlu :refer [mock-store query-workflow query-task]]
             [ablauf.job.manifold-sql :as msql]
-            [clojure.test :refer :all]
-            [next.jdbc :as jdbc]))
+            [clojure.test :refer :all]))
 
 (use-fixtures :each (partial sqlu/reset-db-fixture sqlu/test-spec))
 
 (def sql-runner (msql/make-sql-runner sqlu/test-spec))
 
-(defn- mock-store []
-  (reify store/JobStore
-    (persist [this uuid context state]
-      (d/success-deferred :ok))))
-
 (defn- action-fn [{:ast/keys [action payload]}]
   (case action
     :action/fail (d/error-deferred :error/error)
     ::inc (d/success-deferred (inc payload))))
-
-(defn- query-workflow [uuid]
-  (jdbc/execute-one!
-   sqlu/test-spec
-   ["select * from workflow_run where uuid=?" (str uuid)]))
-
-(defn- query-task [uuid]
-  (jdbc/execute!
-   sqlu/test-spec
-   ["select * from task where wuuid=?" (str uuid)]))
 
 (deftest job-archival-test
   (let [ast (ast/action!! ::inc 1)]

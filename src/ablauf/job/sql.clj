@@ -8,9 +8,10 @@
    while `task` is used for both calls to `job/restart` and action
    dispatches."
   (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            [manifold.deferred :as d]
             [next.jdbc :as jdbc]
             [ablauf.job :as job]
-            [ablauf.job.ast :as ast]
             [ablauf.job.store :as store]
             [clojure.tools.logging :as log])
   (:import [clojure.lang ExceptionInfo]))
@@ -124,6 +125,13 @@
                      (serialize context)
                      id]))
 
+(defn- update-task-status
+  "Updates the task. Mostly for updating state to 'pending'"
+  [tx {:task/keys [status id]}]
+  (jdbc/execute! tx ["update task set status=? where id=?"
+                     status
+                     id]))
+
 (defn- insert-workflow
   "Register new workfow as ready to be processed"
   [tx jobstore [ast context] uuid owner system type metadata]
@@ -181,80 +189,92 @@
 
 (defn- process-task
   "Handler for tasks of type `action`:
-
-   Produces a *success* or *failure* output from a payload,
-   then creates a workflow restart task to process the result.
-
+   Produces a *success* or *failure* output from a payload.
    Runs the payload through `action-fn`, handling exceptions through
    `safe-run`."
-  [tx action-fn {:task/keys [wid wuuid payload]}]
-  ;; TODO will we need the context?
+  [context action-fn {:task/keys [payload]}]
   (let [start       (clock)
-        context     (workflow-context-by-id tx wid)
         ctx+payload (assoc payload :exec/context context)
         result      (safe-run action-fn ctx+payload)
         result+ts   (-> result
                         (assoc :exec/timestamp start
                                :exec/duration (- (clock) start))
                         (dissoc :exec/context))]
-    (insert-workflow-restart tx wid wuuid [result+ts])))
+    result+ts))
 
 (defn- process-one
-  "Process a new task within a transaction, this function ends up either
+  "Process a new task. This function ends up either
    processing a result (when encountering a task of type `workflow`), or
    performing a side-effect (for `action` type tasks).
 
-   See `restart-workflow` and `process-task` for details on each individual
-   action."
+   Side-effects are performed outside of transactions.
+   See `restart-workflow` and `process-task` for details on each individual action."
   [db jobstore action-fn]
-  (jdbc/with-transaction [tx db]
-    (when-let [task (next-task! tx)]
-      (log/debugf "Worker picked up task with id %s" (:task/id task))
-      (if (= "workflow" (:task/type task))
-        (restart-workflow tx jobstore task)
-        (process-task tx action-fn task))
-      (clean-task tx (:task/id task))
-      true)))
+  (let [[nxt context task] (jdbc/with-transaction [tx db]
+                             ;; acquire lock, get next task, release lock
+                             (when-let [task (next-task! tx)]
+                               (if (= "workflow" (:task/type task))
+                                 ;; insert a restart, delete the current workflow task
+                                 (do
+                                   (log/debugf "Restarting workflow: %s" task)
+                                   (restart-workflow tx jobstore task)
+                                   (clean-task tx (:task/id task))
+                                   [:workflow nil nil])
+                                 ;; mark task as pending, exit tx so we release the conn
+                                 (do
+                                   (log/debugf "Updating task status: %s" task)
+                                   (update-task-status tx task)
+                                   [:task (workflow-context-by-id tx (:task/wid task)) task]))))]
+    ;; we return true to tell if caller if should check for more tasks
+    (condp = nxt
+      :workflow true
+      :task (let [{:task/keys [wid wuuid id]} task
+                  ;; process task never throws
+                  _         (log/debugf "Starting task processing: %s" task)
+                  result+ts (process-task context action-fn task)]
+              (jdbc/with-transaction [tx db]
+                (log/debugf "Task processing done, proceeding: %s" result+ts)
+                (insert-workflow-restart tx wid wuuid [result+ts])
+                (clean-task tx id))
+              true)
+      nil)))
 
 (defn- process-available
   "Loop over all immediately available items and process them in
-  separate transactions."
-  ([db jobstore action-fn stop-fn]
-   (process-available db jobstore action-fn stop-fn nil))
-  ([db jobstore action-fn stop-fn error-handler]
-   (loop []
-     (when (and (try
-                  (process-one db jobstore action-fn)
-                  (catch ExceptionInfo e
-                    ;; if we aborted due to workflow locked, just let it recur
-                    ;; otherwise preserve previous behaviour
-                    ;; dont throw up so we don't exhaust runner threads
-                    (when (= :workflow/locked (-> e ex-data :cause))
-                      (log/infof "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
-                      ;; let it retry
-                      true))
-                  (catch Exception e
-                    (log/error e "Caught exception")
-                    (when error-handler (error-handler e))))
-                (not (true? (stop-fn))))
-       (recur)))))
+  separate transactions"
+  [db jobstore action-fn stop-fn]
+  (loop []
+    (when (and (try
+                 (process-one db jobstore action-fn)
+                 (catch ExceptionInfo e
+                   ;; if we aborted due to workflow locked, just let it recur
+                   ;; otherwise preserve previous behaviour
+                   ;; dont throw up so we don't exhaust runner threads
+                   (when (= :workflow/locked (-> e ex-data :cause))
+                     (log/tracef "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id)))
+                   true)
+                 ;; any other exceptions we proceed
+                 (catch Exception e
+                   (log/error e "Cannot process task")))
+               (not (true? (stop-fn))))
+      (recur))))
 
 (defn worker
   "Until `stop-fn` returns true, process items until the queue is
   exhausted, then wait for a random amount of time (between `wait-ms`
   and `wait-ms` + `wait-allowance`).
 
-  If `stop-fn` throws, the worker will exit.
-
-  If `error-handler` is supplied, it will be called with the caught exception.
-  If the error handler (re)throws, the worker will stop processing and quit.
-
-  As many worker threads as necessary can be started on a single host."
-  [db jobstore {:keys [action-fn error-handler]} wait-ms wait-allowance stop-fn]
+   As many worker threads as necessary can be started on a single
+  host."
+  [db jobstore {:keys [action-fn]} wait-ms wait-allowance stop-fn]
   (loop []
-    (process-available db jobstore action-fn stop-fn error-handler)
+    (try
+      ;; TODO: try/catch, mark job as failed
+      (process-available db jobstore action-fn stop-fn)
+      (catch Exception e
+        (log/error e "Cannot process")))
     (when-not (true? (stop-fn))
-      (Thread/sleep (long (+ wait-ms (rand-int wait-allowance))))
+      (Thread/sleep (+ wait-ms (rand-int wait-allowance)))
       (recur))))
 
 (defn submit
@@ -272,10 +292,10 @@
           wid (insert-workflow tx jobstore ast uuid owner system type metadata)]
       (insert-workflow-restart tx wid uuid []))))
 
-(defn retry
+(defn submit-retry
   "Retries a given job by its id. If the job is in a replayable state, it will register a job entry for restarting the job.
   Returns `true` if the job is retryable, `false` otherwise.
-  Will throw an exception if the job is has not terminated.
+  Will throw an exception if the job has not terminated.
   The processing should be done by a `worker` thread."
   [db jobstore wid]
   ;; very similar to restart-workflow
@@ -287,7 +307,7 @@
 
       ;; preflight check: don't try to retry ongoing job
       (when-not (job/done? ast)
-        (throw (ex-info "workflow run has not terminated" {:workflow_run/uuid uuid :workflow_run/status status})))
+        (throw (ex-info "Workflow run cannot be retried, has not terminated" {:workflow_run/uuid uuid :workflow_run/status status})))
 
       ;; can't replay, bail
       (if (job/done? replayable-ast)
@@ -295,46 +315,69 @@
         ;; else
         (try
           (update-workflow tx wid replayable-ast updated-context)
-          (let [job                   (job/make-with-context (job/unzip replayable-ast) updated-context)
+          (let [job (job/make-with-context (job/unzip replayable-ast) updated-context)
                 [ast context actions] (job/restart job [])]
             (doseq [action actions]
               (insert-action tx wid uuid action))
             (store/sync-persist jobstore uuid context ast))
           true
           (catch Exception e
-            (log/error e "cannot restart worklow" uuid)
+            (log/error e "Cannot restart workflow" uuid)
             (throw e)))))))
 
-(comment
-  (def db (atom {}))
+(defn fail-pending-tasks!
+  "Sequentially fails all tasks marked as pending.
+  Returns a set with workflow ids.
+  Workflows can then be retried via `(retry tx workflow-id jobstore)`
+  "
+  [db jobstore]
+  (jdbc/with-transaction [tx db]
+    (let [pending-tasks  (jdbc/execute! tx ["select * from task where status='pending' for update skip locked"])
+          workflow-uuids (set (mapv :task/wid pending-tasks))
+          ;; these tasks were marked as pending **on the AST** but never got to
+          ;; actually have a chance to run (eg: due to few workers, etc) - the AST says "pending" but DB says "new"
+          ;; why? ablauf will always insert a "pending" ast node on workflow restart
+          ;; => we need to remove them from the workflow ASTs to ensure the workflow will be in a terminal state
+          ;; only terminal workflows can be retried
+          orphaned-tasks (jdbc/execute! tx ["select * from task where status = 'new' and wid in (?) for update skip locked"
+                                            (str/join "," workflow-uuids)])]
 
-  (def jobstore
-    (reify store/JobStore
-      (persist [_ uuid context state]
-        (swap! db assoc uuid {:state state :context context}))))
+      (log/infof "Pruning %s tasks with status='new'" (count orphaned-tasks))
+      (doseq [[wid tasks] (->> orphaned-tasks (group-by :task/wid))]
+        ;; for each workflow, compile a list of AST ids
+        ;; remove them fromt the workflow's AST
+        ;; even if eg: a (dopar ...) is run one by one, the AST nodes will already be marked as pending
+        ;; this will be a problem for restart, as restart only works for terminal jobs
+        (let [matching-id? (set (mapv (comp :ast/id deserialize :task/payload) tasks))
+              {:workflow_run/keys [job uuid]} (workflow-by-id-for-update tx wid)
+              [ast context _] (job/restart job [])
+              to-remove    (fn [{:ast/keys [id]}] (matching-id? id))
+              pruned-ast   (job/remove-nodes-by ast to-remove)]
 
-  (def dbenv
-    {:connection-uri (or (System/getenv "MARIA_JDBC_URI")
-                         "jdbc:mysql://root:root@127.0.0.1:3306/ablauf")})
+          (update-workflow tx wid pruned-ast context)
+          (store/sync-persist jobstore uuid context ast)
+          ;; remove all tasks from the DB too
+          ;; after this, the workflow AST should be replayable
+          (run! #(clean-task tx (:task/id %)) tasks)))
 
-  (defn dumb-fn [task]
-    (:ast/payload task))
+      ;; go to each task, mark it as failure
+      ;; restart the workflow to keep AST consistent
+      (log/infof "Preparing to fail %s pending tasks" (count pending-tasks))
+      (reduce (fn [workflow-ids db-task]
+                (let [task            (-> db-task
+                                          (update :task/payload deserialize)
+                                          (update :task/wuuid parse-uuid))
+                      {:task/keys [id wid]} task
+                      context         (workflow-context-by-id tx wid)
+                      updated-context (assoc context :exec/retries (inc (get context :exec/retries 0)))
 
-  (reset! db {})
-  (pr @db)
+                      action-fn       (fn [_] (d/error-deferred ""))
+                      result+ts       (process-task updated-context action-fn task)]
 
-  (def ast (ast/do!!
-            (ast/dopar!!
-             (ast/log!! "hello1")
-             (ast/log!! "hello2"))
-            (ast/log!! "final")))
-
-  (submit dbenv jobstore (ast/log!! "hello") {:context {:a :b}})
-
-  (submit dbenv jobstore (ast/do!! (ast/log!! "hello1") (ast/log!! "hello2")) {:context {:a :b}})
-
-  (submit dbenv jobstore ast {:context {:a :b}})
-
-  (def f (future (worker dbenv jobstore {:action-fn #'dumb-fn} 100 900 (constantly false))))
-
-  "")
+                  (log/debugf "Marking task with id %s as failed" id)
+                  (restart-workflow tx jobstore (assoc task :task/payload [result+ts]))
+                  (clean-task tx id)
+                  ;; append
+                  (conj workflow-ids wid)))
+              #{}
+              pending-tasks))))

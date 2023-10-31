@@ -1,6 +1,5 @@
-(ns ablauf.job-prune
+(ns ablauf.job-prune-test
   (:require [ablauf.job :refer [prune]]
-            [ablauf.job.ast :as ast]
             [clojure.test :refer [deftest is testing]]))
 
 (deftest prune-test

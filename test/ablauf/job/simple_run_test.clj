@@ -1,12 +1,11 @@
-(ns ablauf.job.simple-run
+(ns ablauf.job.simple-run-test
   (:require [manifold.stream      :as stream]
             [manifold.deferred    :as d]
             [ablauf.job           :as job]
             [ablauf.job.ast       :as ast]
             [ablauf.job.store     :as store]
             [ablauf.job.manifold  :refer [runner]]
-            [ablauf.job.sql       :as sql]
-            [ablauf.job.sql-utils :as sqlu :refer [deftestp]]
+            [ablauf.job.sql.utils :as sqlu :refer [deftestp]]
             [ablauf.job.manifold-sql :as msql]
             [clojure.walk         :as walk]
             [clojure.test         :refer :all]))

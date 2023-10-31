@@ -159,6 +159,23 @@ as necessary.  Ablauf comes with two bundled runners:
 - `ablauf.job.sql`: A SQL-backed processor which decouples job
   submission and job running.
 
+#### Workflow resiliency
+
+Workflows may need to survice process restarts, crashes, etc.
+However, not all ASTs are retryable. To provide resiliency, ablauf has two concepts
+
+* Idempotent leafs: you can mark an action as idempotent via `ast/idempotent-action`:
+  * `(ast/idempotent-action!! :jenkins/create-build {:name name})`
+* Fail & Retry
+  * On process (re)start, you can instruct ablauf to mark all *pending* tasks as *failed*
+    (its not possible to know if an action was completed (either successfully or not)) if ablauf
+    stopped before writing the result to the database: `(let [retryable-workflow-ids (ablauf/fail-pending-tasks! db store)] ...)`
+  * With the resulting list of workflow ids, you can then ask ablauf to issue a retry:
+  ```(let [workflow-ids (ablauf/fail-pending-tasks! db store)]
+       (doseq [workflow-id workflow-ids]
+         (when (ablauf/submit-retry db store workflow-id)
+               (log/info "Workflow retried submitted successfully"))))```
+
 ### Terminology
 
 #### AST

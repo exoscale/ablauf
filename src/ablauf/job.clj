@@ -136,7 +136,7 @@
           :else
           (recur (zip/next pos) nodes))))))
 
-(defn- update-tree [job & {:keys [pred action]}]
+(defn- update-tree [job & {:keys [pred action remove?]}]
   (loop [loc job]
     (let [node (zip/node loc)]
       (cond
@@ -144,7 +144,9 @@
         (ast-zip (zip/root loc))
 
         (pred node)
-        (recur (zip/next (zip/edit loc action)))
+        (recur (zip/next (if (true? remove?)
+                           (zip/remove loc)
+                           (zip/edit loc action))))
 
         :else
         (recur (zip/next loc))))))
@@ -170,6 +172,13 @@
                            (assoc :exec/reason reason)
                            :else
                            (assoc :exec/result :result/failure)))))
+
+(defn remove-nodes-by
+  "Removes any node that returns true for `(f node)`. Can be a leaf or not."
+  [job f]
+  (update-tree job
+               :pred #(f %1)
+               :remove? true))
 
 (defn abort
   "Given a job, mark pending all pending leafs as failure with the proper reason.

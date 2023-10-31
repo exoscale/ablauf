@@ -1,21 +1,13 @@
-(ns ablauf.job.sql-retry-fail-test
+(ns ablauf.job.sql.retry-fail-test
   (:require [manifold.deferred :as d]
             [ablauf.job.ast :as ast]
             [ablauf.job.store :as store]
-            [ablauf.job.sql-utils :as sqlu]
+            [ablauf.job.sql.utils :as sqlu :refer [query-workflow sql-worker-fn]]
             [clojure.test :refer :all]
-            [next.jdbc :as jdbc]
-            [ablauf.job.sql :as sql]
-            [clojure.tools.logging :as log])
+            [ablauf.job.sql :as sql])
   (:import [java.util.concurrent Executors TimeoutException]))
 
 (use-fixtures :each (partial sqlu/reset-db-fixture sqlu/test-spec))
-
-(defn- sql-worker-fn
-  [db-spec store action-fn done?]
-  (fn []
-    (sql/worker db-spec store {:action-fn action-fn} 100 900 done?)
-    (log/info "Worker done!")))
 
 (defn- mock-store [atm]
   (reify store/JobStore
@@ -32,11 +24,6 @@
         :action/sleep (do (Thread/sleep 1000)
                           (d/error-deferred :error/fail))
         :default (d/error-deferred :error/error)))))
-
-(defn- query-workflow [uuid]
-  (jdbc/execute-one!
-   sqlu/test-spec
-   ["select * from workflow_run where uuid=?" (str uuid)]))
 
 (deftest job-retry-fail-test
   (let [tpool            (Executors/newFixedThreadPool 2)
@@ -68,7 +55,7 @@
       ;; busy loop+polling for 10s
       (testing "Retrying a failed, non idempotent job"
         (wait-job-timeout 10)
-        (is (false? (sql/retry sqlu/test-spec store 1)))))
+        (is (false? (sql/submit-retry sqlu/test-spec store 1)))))
 
     ;; dont leave thread lingering
     (.shutdownNow tpool)))
@@ -101,7 +88,7 @@
         ;; busy loop+polling for 10s
         (testing "Retrying an ongoing job fails"
           (is (thrown? Exception
-                       (sql/retry sqlu/test-spec store 1))))))
+                       (sql/submit-retry sqlu/test-spec store 1))))))
 
     ;; dont leave thread lingering
     (.shutdownNow tpool)))
