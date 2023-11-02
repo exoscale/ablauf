@@ -160,6 +160,7 @@
 (defn- clean-task
   "Updates the task status"
   [tx id]
+  (log/debugf "Deleting task with id: %s" id)
   (jdbc/execute! tx ["delete from task where id=?" id]))
 
 (defn- restart-workflow
