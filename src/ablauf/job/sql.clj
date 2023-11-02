@@ -250,8 +250,9 @@
                    ;; if we aborted due to workflow locked, just let it recur
                    ;; otherwise preserve previous behaviour
                    ;; dont throw up so we don't exhaust runner threads
-                   (when (= :workflow/locked (-> e ex-data :cause))
-                     (log/tracef "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id)))
+                   (if (= :workflow/locked (-> e ex-data :cause))
+                     (log/tracef "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
+                     (log/error e "Cannot process task"))
                    true)
                  ;; any other exceptions we proceed
                  (catch Exception e
