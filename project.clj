@@ -6,7 +6,7 @@
   :dependencies [[org.clojure/clojure               "1.11.1"]
                  [spootnik/commons                  "0.3.2"]
                  [mysql/mysql-connector-java        "8.0.30"]
-                 [com.github.seancorfield/next.jdbc "1.3.834"]
+                 [com.github.seancorfield/next.jdbc "1.3.894"]
                  [org.clojure/tools.logging         "1.2.4"]
                  [manifold                          "0.2.4"]
                  [migratus                          "1.4.4"]]

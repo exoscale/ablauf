@@ -6,7 +6,7 @@
           :db {:connection-uri (or (System/getenv "MARIA_JDBC_URI")
                                    "jdbc:mysql://root:root@127.0.0.1:3306/ablauf")}})
 
-(migratus/pending-list cfg)
+;; (migratus/pending-list cfg)
 
 (comment
   (migratus/migrate cfg)

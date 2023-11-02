@@ -16,6 +16,8 @@
             [clojure.tools.logging :as log])
   (:import [clojure.lang ExceptionInfo]))
 
+(def ^:private isolation-level :read-committed)
+
 ;; Safe version of functions performing side effects to avoid breaking
 ;; the processing loop.
 ;;
@@ -60,7 +62,8 @@
   [tx]
   (let [task (jdbc/execute-one!
               tx
-              ["select * from task where status = 'new' limit 1 for update skip locked"])]
+              ["select task.* from task join workflow_run on workflow_run.id=task.wid where task.status = 'new' limit 1
+               for update of task for update of workflow_run skip locked"])]
     (some-> task
             (update :task/payload deserialize)
             (update :task/wuuid parse-uuid)
@@ -169,7 +172,7 @@
    if applicable. This can be thought of as the function to advance the
    instruction pointer within the program, results in a new program and
    updated context."
-  [tx jobstore {:task/keys [wid wuuid payload] :or {payload []}}]
+  [tx jobstore {:task/keys [wid wuuid payload] :or {payload []} :as task}]
   ;; NOTE: a dopar!! ast can be picked up by two different threads
   ;; when they both want to update the same workflow, only one of them may win
   ;; either we
@@ -211,13 +214,13 @@
    Side-effects are performed outside of transactions.
    See `restart-workflow` and `process-task` for details on each individual action."
   [db jobstore action-fn]
-  (let [[nxt context task] (jdbc/with-transaction [tx db]
+  (let [[nxt context task] (jdbc/with-transaction [tx db {:isolation isolation-level}]
                              ;; acquire lock, get next task, release lock
                              (when-let [task (next-task! tx)]
                                (if (= "workflow" (:task/type task))
                                  ;; insert a restart, delete the current workflow task
                                  (do
-                                   (log/debugf "Restarting workflow: %s" task)
+                                   (log/debugf "Restarting workflow with task id %s: %s" (:task/id task) task)
                                    (restart-workflow tx jobstore task)
                                    (clean-task tx (:task/id task))
                                    [:workflow nil nil])
@@ -252,7 +255,7 @@
                    ;; otherwise preserve previous behaviour
                    ;; dont throw up so we don't exhaust runner threads
                    (if (= :workflow/locked (-> e ex-data :cause))
-                     (log/tracef "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
+                     (log/debugf "Workflow run with id %s locked, retrying" (-> e ex-data :workflow_run/id))
                      (log/error e "Cannot process task"))
                    true)
                  ;; any other exceptions we proceed
@@ -289,7 +292,7 @@
                            owner    "unknown"
                            type     "unknown"
                            system   "unknown"}}]
-  (jdbc/with-transaction [tx db]
+  (jdbc/with-transaction [tx db {:isolation isolation-level}]
     (let [ast (job/make-with-context job (dissoc context :exec/runtime))
           wid (insert-workflow tx jobstore ast uuid owner system type metadata)]
       (insert-workflow-restart tx wid uuid []))))
