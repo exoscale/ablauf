@@ -4,9 +4,8 @@
   (:require [manifold.deferred :as d]
             [ablauf.job.store :as store]
             [ablauf.job.sql :as sql]
-            [ablauf.job.sql.utils :as sqlu]
+            [ablauf.job.sql.utils :as sqlu :refer [query-task]]
             [clojure.test :refer :all]
-            [next.jdbc :as jdbc]
             [hikari-cp.core :as hikari]))
 
 (use-fixtures :each (partial sqlu/reset-db-fixture sqlu/test-spec))
@@ -28,11 +27,6 @@
 (defn- action-fn [{:ast/keys [action payload]}]
   (case action
     ::inc (d/success-deferred (inc payload))))
-
-(defn- query-task [uuid]
-  (jdbc/execute-one!
-   sqlu/test-spec
-   ["select * from task where wuuid=?" (str uuid)]))
 
 (deftest task-status-pending
   (let [parnodes (repeat 1 #:ast{:type :ast/leaf, :action ::inc, :payload 1})

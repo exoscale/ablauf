@@ -5,15 +5,16 @@ networks:
 
 services:
 
-  mysql:
-    image: mysql:8.0
+  mariadb:
+    image: bitnami/mariadb:10.6.11
     networks:
       - ablauf
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: ablauf
-      MYSQL_USER:     ablauf
-      MYSQL_PASSWORD: ablauf
+      MARIADB_ROOT_PASSWORD: ablauf
+      MARIADB_ROOT_USER: ablauf
+      MARIADB_DATABASE: ablauf
+      MARIADB_SKIP_TEST_DB: "true"
+      MARIADB_ENABLE_SLOW_QUERY: "true"
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
       timeout: 20s

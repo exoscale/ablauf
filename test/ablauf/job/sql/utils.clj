@@ -13,7 +13,7 @@
 
 (def test-spec
   {:connection-uri (or (System/getenv "MARIA_JDBC_URI")
-                       "jdbc:mysql://root:root@127.0.0.1:3306/ablauf")})
+                       "jdbc:mysql://ablauf:ablauf@127.0.0.1:3306/ablauf")})
 (defn migrate-db
   "Install database schema"
   ([]

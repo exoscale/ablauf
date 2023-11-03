@@ -63,7 +63,7 @@
   (let [task (jdbc/execute-one!
               tx
               ["select task.* from task join workflow_run on workflow_run.id=task.wid where task.status = 'new' limit 1
-               for update of task for update of workflow_run skip locked"])]
+               for update skip locked"])]
     (some-> task
             (update :task/payload deserialize)
             (update :task/wuuid parse-uuid)
@@ -163,7 +163,7 @@
 (defn- clean-task
   "Updates the task status"
   [tx id]
-  (log/debugf "Deleting task with id: %s" id)
+  (log/tracef "Deleting task with id: %s" id)
   (jdbc/execute! tx ["delete from task where id=?" id]))
 
 (defn- restart-workflow
@@ -238,8 +238,9 @@
                   result+ts (process-task context action-fn task)]
               (jdbc/with-transaction [tx db]
                 (log/debugf "Task processing done, proceeding: %s" result+ts)
-                (insert-workflow-restart tx wid wuuid [result+ts])
-                (clean-task tx id))
+                (clean-task tx id)
+                (insert-workflow-restart tx wid wuuid [result+ts]))
+
               true)
       nil)))
 
