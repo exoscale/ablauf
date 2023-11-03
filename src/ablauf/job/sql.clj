@@ -240,7 +240,7 @@
                 (log/debugf "Task %s processing done, proceeding: %s" (:task/id task) result+ts)
                 ;; lock the workflow_run row, effectively making it serializable
                 ;; and preventing concurrent txs issues
-                (jdbc/execute-one! tx [(str "select * from workflow_run where id=? for update skip locked") wid])
+                (jdbc/execute-one! tx [(str "select * from workflow_run where id=? for update") wid])
                 (clean-task tx id)
                 (insert-workflow-restart tx wid wuuid [result+ts]))
 
