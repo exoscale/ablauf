@@ -1,10 +1,8 @@
 (ns ablauf.job.sql.single-connection-multiple-workers-test
   (:require [manifold.deferred :as d]
             [ablauf.job.sql :as sql]
-            [ablauf.job.store :as store]
             [ablauf.job.sql.utils :as sqlu :refer [mock-store make-datasource query-workflow sql-worker-fn]]
             [clojure.test :refer :all]
-            [next.jdbc :as jdbc]
             [hikari-cp.core :as hikari])
   (:import [java.util.concurrent Executors TimeUnit]))
 

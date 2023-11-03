@@ -236,8 +236,11 @@
                   ;; process task never throws
                   _         (log/debugf "Starting task processing: %s" task)
                   result+ts (process-task context action-fn task)]
-              (jdbc/with-transaction [tx db]
-                (log/debugf "Task processing done, proceeding: %s" result+ts)
+              (jdbc/with-transaction [tx db {:isolation isolation-level}]
+                (log/debugf "Task %s processing done, proceeding: %s" (:task/id task) result+ts)
+                ;; lock the workflow_run row, effectively making it serializable
+                ;; and preventing concurrent txs issues
+                (jdbc/execute-one! tx [(str "select * from workflow_run where id=? for update skip locked") wid])
                 (clean-task tx id)
                 (insert-workflow-restart tx wid wuuid [result+ts]))
 
