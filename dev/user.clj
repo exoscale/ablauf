@@ -10,4 +10,4 @@
 
 (comment
   (migratus/migrate cfg)
-  (migratus/create cfg "task_pending_status"))
+  (migratus/create cfg "drop_task_fk"))

@@ -1,0 +1,1 @@
+ALTER TABLE task ADD FOREIGN KEY (wid) REFERENCES workflow_run(id);

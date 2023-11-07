@@ -23,7 +23,7 @@
     ;; what ablauf relies on when using the ".. for update skip locked"
 
     (let [restart-workflow @#'ablauf.job.sql/restart-workflow
-          restart-tracker (atom {})]
+          restart-tracker  (atom {})]
       (with-redefs [ablauf.job.sql/restart-workflow (fn [tx jobstore {:task/keys [id] :as task}]
                                                       (swap! restart-tracker (fn [m]
                                                                                (if (contains? m id)

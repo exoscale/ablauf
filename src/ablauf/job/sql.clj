@@ -13,8 +13,10 @@
             [next.jdbc :as jdbc]
             [ablauf.job :as job]
             [ablauf.job.store :as store]
+            [ablauf.job.macros :refer [with-retry]]
             [clojure.tools.logging :as log])
-  (:import [clojure.lang ExceptionInfo]))
+  (:import [clojure.lang ExceptionInfo]
+           (com.mysql.cj.jdbc.exceptions MySQLTransactionRollbackException)))
 
 (def ^:private isolation-level :read-committed)
 
@@ -73,6 +75,9 @@
   "Fetch workflow from the database by id and restore stored job data to
    a usable form."
   [tx id]
+  ;; TODO: we could probably get rid of "skip locked"
+  ;; and eliminate the check for :workflow/locked
+  ;; if rollback except is thrown, we will end up retrying anyway
   (let [{:workflow_run/keys [reason ast context] :as wrun}
         (jdbc/execute-one! tx [(str "select id,uuid,status,reason,ast,context "
                                     "from workflow_run where id=? for update skip locked")
@@ -172,7 +177,7 @@
    if applicable. This can be thought of as the function to advance the
    instruction pointer within the program, results in a new program and
    updated context."
-  [tx jobstore {:task/keys [wid wuuid payload] :or {payload []} :as task}]
+  [tx jobstore {:task/keys [wid wuuid payload] :or {payload []} :as _task}]
   ;; NOTE: a dopar!! ast can be picked up by two different threads
   ;; when they both want to update the same workflow, only one of them may win
   ;; either we
@@ -215,35 +220,42 @@
    See `restart-workflow` and `process-task` for details on each individual action."
   [db jobstore action-fn]
   (let [[nxt context task] (jdbc/with-transaction [tx db {:isolation isolation-level}]
-                             ;; acquire lock, get next task, release lock
-                             (when-let [task (next-task! tx)]
-                               (if (= "workflow" (:task/type task))
+                             ;; acquire lock on task, get next task
+                             (when-let [{:task/keys [type wid wuuid id] :as task} (next-task! tx)]
+                               (if (= "workflow" type)
                                  ;; insert a restart, delete the current workflow task
                                  (do
-                                   (log/debugf "Restarting workflow with task id %s: %s" (:task/id task) task)
+                                   (log/debugf "Restarting workflow %s task id %s: %s" wuuid id task)
                                    (restart-workflow tx jobstore task)
-                                   (clean-task tx (:task/id task))
+                                   (clean-task tx id)
                                    [:workflow nil nil])
                                  ;; mark task as pending, exit tx so we release the conn
                                  (do
-                                   (log/debugf "Updating task status: %s" task)
+                                   (log/debugf "Updating workflow %s task id %s status: %s" wuuid id task)
                                    (update-task-status tx task)
-                                   [:task (workflow-context-by-id tx (:task/wid task)) task]))))]
+                                   [:task (workflow-context-by-id tx wid) task]))))]
     ;; we return true to tell if caller if should check for more tasks
     (condp = nxt
       :workflow true
       :task (let [{:task/keys [wid wuuid id]} task
-                  ;; process task never throws
-                  _         (log/debugf "Starting task processing: %s" task)
+                  _         (log/debugf "Starting workflow %s task id %s processing: %s" wuuid id task)
+                  ;; process-task never throws
                   result+ts (process-task context action-fn task)]
-              (jdbc/with-transaction [tx db {:isolation isolation-level}]
-                (log/debugf "Task %s processing done, proceeding: %s" (:task/id task) result+ts)
-                ;; lock the workflow_run row, effectively making it serializable
-                ;; and preventing concurrent txs issues
-                (jdbc/execute-one! tx [(str "select * from workflow_run where id=? for update") wid])
-                (clean-task tx id)
-                (insert-workflow-restart tx wid wuuid [result+ts]))
-
+              ;; unless we crash, we should NEVER
+              ;; miss the following insert, otherwise we can lose the status for some AST nodes
+              ;; meaning some jobs will never finish
+              (with-retry []
+                (jdbc/with-transaction [tx db {:isolation isolation-level}]
+                  (log/debugf "Task id %s for workflow %s processing done, proceeding: %s" id wuuid result+ts)
+                  ;; because the task table references the workflow via FK,
+                  ;; it will try to get a shared lock to the relevant workflow_run row (unless FK is off)
+                  ;; it will conflict with the workflow_run eXclusive lock (due to restart-workflow call)
+                  (clean-task tx id)
+                  (insert-workflow-restart tx wid wuuid [result+ts]))
+                #_:clj-kondo/ignore
+                (catch MySQLTransactionRollbackException e
+                  (log/warnf e "Failed to get lock for workflow %s task %s, retrying" wuuid id)
+                  (retry)))
               true)
       nil)))
 
@@ -278,12 +290,11 @@
   [db jobstore {:keys [action-fn]} wait-ms wait-allowance stop-fn]
   (loop []
     (try
-      ;; TODO: try/catch, mark job as failed
       (process-available db jobstore action-fn stop-fn)
       (catch Exception e
         (log/error e "Cannot process")))
     (when-not (true? (stop-fn))
-      (Thread/sleep (+ wait-ms (rand-int wait-allowance)))
+      (Thread/sleep (long (+ wait-ms (rand-int wait-allowance))))
       (recur))))
 
 (defn submit

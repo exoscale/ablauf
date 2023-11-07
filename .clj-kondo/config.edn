@@ -1,2 +1,3 @@
-{:lint-as      {ablauf.job.sql.utils/deftestp clojure.core/defn}
+{:lint-as      {ablauf.job.sql.utils/deftestp clojure.core/defn
+                ablauf.job.macros/with-retry clojure.core/let}
  :config-paths ["../resources/clj-kondo.exports/exoscale/ablauf"]}
