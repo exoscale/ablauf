@@ -8,10 +8,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/checkout@v7.0.1
     - name: Shutdown Ubuntu MySQL (SUDO)
       run: sudo service mysql stop
-    - uses: mirromutth/mysql-action@de1fba8b3f90ce8db80f663a7043be3cf3231248 # v1.1
+    - uses: mirromutth/mysql-action@v1.1
       with:
         mysql root password: 'root'
         mysql database: 'ablauf'
